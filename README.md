@@ -2,9 +2,9 @@
 
 A modern, feature-rich Model Context Protocol (MCP) client with a beautiful UI, comprehensive HTTP logging, and OAuth 2.1 support.
 
-![MCP Client](https://img.shields.io/npm/v/@nithish6112/mcp-inspector)
-![License](https://img.shields.io/npm/l/@nithish6112/mcp-inspector)
-![Node](https://img.shields.io/node/v/@nithish6112/mcp-inspector)
+![MCP Client](https://img.shields.io/npm/v/@nithish611/mcp-inspector)
+![License](https://img.shields.io/npm/l/@nithish611/mcp-inspector)
+![Node](https://img.shields.io/node/v/@nithish611/mcp-inspector)
 
 ## Features
 
@@ -22,21 +22,21 @@ A modern, feature-rich Model Context Protocol (MCP) client with a beautiful UI, 
 ### Using npx (Recommended)
 
 ```bash
-npx @nithish6112/mcp-inspector
+npx @nithish611/mcp-inspector
 ```
 
 ### Global Installation
 
 ```bash
-npm install -g @nithish6112/mcp-inspector
+npm install -g @nithish611/mcp-inspector
 mcp-client
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/anthropic/mcp-client.git
-cd mcp-client
+git clone https://github.com/nithish611/mcp-inspector.git
+cd mcp-inspector
 npm install
 npm run build
 npm start

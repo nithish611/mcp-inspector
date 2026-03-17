@@ -9,8 +9,11 @@ import httpLogger from './httpLogger.js';
 import {
     clearAllTokens,
     clearRegisteredClients,
+    getAccessToken,
     getAllRegisteredClients,
+    getCanonicalResourceUri,
     getOAuthStatus,
+    getTokenStatus,
     handleAuthCallback,
     initializeOAuth,
     initiateAuthFlow,
@@ -360,10 +363,68 @@ app.get('/api/oauth/status', async (req: Request, res: Response) => {
     };
 
     const status = await getOAuthStatus(String(serverUrl), oauthConfig);
-    res.json(status);
+    const resourceUri = getCanonicalResourceUri(String(serverUrl));
+    const tokenInfo = getTokenStatus(resourceUri);
+    res.json({
+      ...status,
+      hasRefreshToken: tokenInfo.hasTokens && tokenInfo.isValid === false ? undefined : undefined,
+      ...tokenInfo,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to get OAuth status';
     res.status(500).json({ error: message });
+  }
+});
+
+/**
+ * Proactively refresh tokens for a server
+ * POST /api/oauth/refresh
+ * Body: { serverUrl: string, serverId?: string }
+ * Returns refreshed token status or authorizationRequired if refresh fails
+ */
+app.post('/api/oauth/refresh', async (req: Request, res: Response) => {
+  try {
+    const { serverUrl, serverId } = req.body;
+
+    if (!serverUrl) {
+      res.status(400).json({ error: 'Server URL is required' });
+      return;
+    }
+
+    const id = serverId || 'default';
+    const config = connectionManager.getConfig(id);
+    const oauthConfig: OAuthConfig = {
+      enabled: true,
+      clientId: config?.oauth?.clientId,
+      clientSecret: config?.oauth?.clientSecret,
+      scopes: config?.oauth?.scopes,
+      redirectUri: config?.oauth?.redirectUri || DEFAULT_REDIRECT_URI,
+    };
+
+    httpLogger.logNotification('oauth:refresh_start', { serverUrl, serverId: id });
+
+    const token = await getAccessToken(String(serverUrl), oauthConfig);
+    if (token) {
+      const status = await getOAuthStatus(String(serverUrl), oauthConfig);
+      httpLogger.logNotification('oauth:refresh_success', { serverUrl, serverId: id });
+      res.json({ success: true, ...status });
+    } else {
+      httpLogger.logNotification('oauth:refresh_failed_needs_reauth', { serverUrl, serverId: id });
+      res.json({
+        success: false,
+        authenticated: false,
+        authorizationRequired: true,
+      });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Token refresh failed';
+    httpLogger.logError('oauth:refresh_failed', { error: message });
+    res.json({
+      success: false,
+      authenticated: false,
+      authorizationRequired: true,
+      error: message,
+    });
   }
 });
 

@@ -1,11 +1,18 @@
 import { JsonEditor } from '@/components/JsonEditor'
+import { McpAppViewer } from '@/components/McpAppViewer'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { useCallTool, useTools, type Tool } from '@/hooks/useApi'
+import { useCallTool, useReadResource, useTools, type Tool } from '@/hooks/useApi'
 import { cn, copyToClipboard, parseMcpResult, type ParsedMcpResult } from '@/lib/utils'
 import { useServersStore } from '@/stores/serversStore'
 import {
@@ -14,8 +21,10 @@ import {
     ChevronRight,
     Code,
     Copy,
+    Expand,
     FormInput,
     GripHorizontal,
+    Layout,
     Loader2,
     Play,
     RefreshCw,
@@ -26,7 +35,59 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 
-// Local storage key for tool arguments
+function getToolUiResourceUri(tool: Tool): string | undefined {
+  const meta = tool._meta
+  if (!meta) return undefined
+  const uiMeta = meta.ui as { resourceUri?: string } | undefined
+  let uri: unknown = uiMeta?.resourceUri
+  if (uri === undefined) {
+    uri = (meta as Record<string, unknown>)['ui/resourceUri']
+  }
+  if (typeof uri === 'string' && uri.startsWith('ui://')) {
+    return uri
+  }
+  return undefined
+}
+
+type SchemaNode = {
+  type?: string
+  properties?: Record<string, SchemaNode>
+  items?: SchemaNode
+  default?: unknown
+  enum?: unknown[]
+  additionalProperties?: boolean | SchemaNode
+}
+
+function buildSkeleton(schema: SchemaNode, depth = 0): unknown {
+  if (depth > 6) return undefined
+  if (schema.default !== undefined) return schema.default
+  if (schema.enum && schema.enum.length > 0) return schema.enum[0]
+
+  switch (schema.type) {
+    case 'string':
+      return ''
+    case 'number':
+    case 'integer':
+      return 0
+    case 'boolean':
+      return false
+    case 'array': {
+      return []
+    }
+    case 'object': {
+      if (!schema.properties) return {}
+      const obj: Record<string, unknown> = {}
+      for (const [key, propSchema] of Object.entries(schema.properties)) {
+        const val = buildSkeleton(propSchema, depth + 1)
+        if (val !== undefined) obj[key] = val
+      }
+      return obj
+    }
+    default:
+      return undefined
+  }
+}
+
 const TOOL_ARGS_STORAGE_KEY = 'mcp-tool-args'
 
 // Get stored tool arguments
@@ -97,6 +158,7 @@ export function ToolsTab() {
   
   const { data: tools, isLoading, refetch, error } = useTools(activeServerId || '')
   const callToolMutation = useCallTool()
+  const readResourceMutation = useReadResource()
 
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null)
   const [toolArgs, setToolArgs] = useState<string>('{}')
@@ -106,6 +168,15 @@ export function ToolsTab() {
   const [inputMode, setInputMode] = useState<'json' | 'form'>('form')
   const [formValues, setFormValues] = useState<Record<string, string>>({})
   const [toolSearchQuery, setToolSearchQuery] = useState('')
+  const [resultViewMode, setResultViewMode] = useState<'json' | 'ui'>('json')
+  const [appHtml, setAppHtml] = useState<string | null>(null)
+  const [isLoadingAppHtml, setIsLoadingAppHtml] = useState(false)
+  const [schemaDialogTool, setSchemaDialogTool] = useState<Tool | null>(null)
+  const [resultExpanded, setResultExpanded] = useState(false)
+  const [expandedFieldKey, setExpandedFieldKey] = useState<string | null>(null)
+
+  const selectedToolResourceUri = selectedTool ? getToolUiResourceUri(selectedTool) : undefined
+  const isAppTool = !!selectedToolResourceUri
 
   // Filter tools based on search query
   const filteredTools = useMemo(() => {
@@ -123,6 +194,8 @@ export function ToolsTab() {
     setToolResult(null)
     setParsedResult(null)
     setToolSearchQuery('')
+    setAppHtml(null)
+    setResultViewMode('json')
   }, [activeServerId])
 
   // Refetch tools when connected
@@ -143,39 +216,32 @@ export function ToolsTab() {
           const parsed = JSON.parse(storedArgs)
           setFormValues(
             Object.fromEntries(
-              Object.entries(parsed).map(([k, v]) => [k, String(v)])
+              Object.entries(parsed).map(([k, v]) => [
+                k,
+                typeof v === 'object' && v !== null ? JSON.stringify(v, null, 2) : String(v),
+              ])
             )
           )
         } catch {
           setFormValues({})
         }
       } else {
-        // Generate default arguments from schema
         const defaultArgs: Record<string, unknown> = {}
         const props = selectedTool.inputSchema.properties || {}
         
         Object.entries(props).forEach(([key, value]) => {
-          const prop = value as { type?: string; default?: unknown }
-          if (prop.default !== undefined) {
-            defaultArgs[key] = prop.default
-          } else if (prop.type === 'string') {
-            defaultArgs[key] = ''
-          } else if (prop.type === 'number' || prop.type === 'integer') {
-            defaultArgs[key] = 0
-          } else if (prop.type === 'boolean') {
-            defaultArgs[key] = false
-          } else if (prop.type === 'array') {
-            defaultArgs[key] = []
-          } else if (prop.type === 'object') {
-            defaultArgs[key] = {}
-          }
+          const val = buildSkeleton(value as SchemaNode)
+          if (val !== undefined) defaultArgs[key] = val
         })
 
         const argsStr = JSON.stringify(defaultArgs, null, 2)
         setToolArgs(argsStr)
         setFormValues(
           Object.fromEntries(
-            Object.entries(defaultArgs).map(([k, v]) => [k, String(v)])
+            Object.entries(defaultArgs).map(([k, v]) => [
+              k,
+              typeof v === 'object' && v !== null ? JSON.stringify(v, null, 2) : String(v),
+            ])
           )
         )
       }
@@ -189,6 +255,11 @@ export function ToolsTab() {
         setToolResult(null)
         setParsedResult(null)
       }
+
+      // Reset app state and set default view mode based on tool type
+      setAppHtml(null)
+      const resourceUri = getToolUiResourceUri(selectedTool)
+      setResultViewMode(resourceUri ? 'ui' : 'json')
     }
   }, [selectedTool, activeServerId])
 
@@ -199,8 +270,30 @@ export function ToolsTab() {
     }
   }, [toolArgs, selectedTool, activeServerId])
 
+  const fetchAppHtml = useCallback(async (resourceUri: string) => {
+    if (!activeServerId) return
+    setIsLoadingAppHtml(true)
+    try {
+      const result = await readResourceMutation.mutateAsync({
+        serverId: activeServerId,
+        uri: resourceUri,
+      })
+      const res = result as { contents?: Array<{ text?: string }> }
+      const htmlContent = res?.contents?.[0]?.text
+      if (htmlContent) {
+        setAppHtml(htmlContent)
+      }
+    } catch (err) {
+      console.error('Failed to fetch MCP App HTML resource:', err)
+    } finally {
+      setIsLoadingAppHtml(false)
+    }
+  }, [activeServerId, readResourceMutation])
+
   const handleExecuteTool = useCallback(async () => {
     if (!selectedTool || !activeServerId) return
+
+    const resourceUri = getToolUiResourceUri(selectedTool)
 
     try {
       const args = inputMode === 'json' ? JSON.parse(toolArgs) : formValues
@@ -212,8 +305,12 @@ export function ToolsTab() {
       setToolResult(result)
       const parsed = parseMcpResult(result)
       setParsedResult(parsed)
-      // Cache the result
       storeCachedToolResult(activeServerId, selectedTool.name, parsed)
+
+      if (resourceUri) {
+        setResultViewMode('ui')
+        fetchAppHtml(resourceUri)
+      }
     } catch (error) {
       if (error instanceof SyntaxError) {
         const errorResult = { error: 'Invalid JSON in arguments' }
@@ -239,7 +336,24 @@ export function ToolsTab() {
         })
       }
     }
-  }, [selectedTool, activeServerId, inputMode, toolArgs, formValues, callToolMutation])
+  }, [selectedTool, activeServerId, inputMode, toolArgs, formValues, callToolMutation, fetchAppHtml])
+
+  const handleCallToolFromApp = useCallback(async (name: string, args?: Record<string, unknown>) => {
+    if (!activeServerId) throw new Error('No server connected')
+    return await callToolMutation.mutateAsync({
+      serverId: activeServerId,
+      name,
+      arguments: args,
+    })
+  }, [activeServerId, callToolMutation])
+
+  const handleReadResourceFromApp = useCallback(async (uri: string) => {
+    if (!activeServerId) throw new Error('No server connected')
+    return await readResourceMutation.mutateAsync({
+      serverId: activeServerId,
+      uri,
+    })
+  }, [activeServerId, readResourceMutation])
 
   // Keyboard shortcut: Cmd/Ctrl + Enter to execute
   useEffect(() => {
@@ -276,7 +390,6 @@ export function ToolsTab() {
   const updateFormValue = (key: string, value: string) => {
     const newValues = { ...formValues, [key]: value }
     setFormValues(newValues)
-    // Sync to JSON
     try {
       const jsonObj: Record<string, unknown> = {}
       const props = selectedTool?.inputSchema.properties || {}
@@ -286,6 +399,12 @@ export function ToolsTab() {
           jsonObj[k] = Number(v) || 0
         } else if (prop?.type === 'boolean') {
           jsonObj[k] = v === 'true'
+        } else if (prop?.type === 'object' || prop?.type === 'array') {
+          try {
+            jsonObj[k] = JSON.parse(v)
+          } catch {
+            jsonObj[k] = v
+          }
         } else {
           jsonObj[k] = v
         }
@@ -401,9 +520,17 @@ export function ToolsTab() {
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
-                            <p className="font-medium font-mono text-sm truncate">
-                              {tool.name}
-                            </p>
+                            <div className="flex items-center gap-1.5">
+                              <p className="font-medium font-mono text-sm truncate">
+                                {tool.name}
+                              </p>
+                              {getToolUiResourceUri(tool) && (
+                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 flex-shrink-0 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+                                  <Layout className="h-2.5 w-2.5 mr-0.5" />
+                                  UI
+                                </Badge>
+                              )}
+                            </div>
                             {tool.description && (
                               <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
                                 {tool.description}
@@ -413,25 +540,43 @@ export function ToolsTab() {
                         </div>
                         
                         {/* Schema toggle */}
-                        <button
-                          className="flex items-center gap-1 text-xs text-muted-foreground mt-2 hover:text-foreground"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            toggleSchemaExpanded(tool.name)
-                          }}
-                        >
-                          {expandedSchemas.has(tool.name) ? (
-                            <ChevronDown className="h-3 w-3" />
-                          ) : (
-                            <ChevronRight className="h-3 w-3" />
+                        <div className="flex items-center gap-1 mt-2">
+                          <button
+                            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              toggleSchemaExpanded(tool.name)
+                            }}
+                          >
+                            {expandedSchemas.has(tool.name) ? (
+                              <ChevronDown className="h-3 w-3" />
+                            ) : (
+                              <ChevronRight className="h-3 w-3" />
+                            )}
+                            Schema
+                          </button>
+                          {expandedSchemas.has(tool.name) && (
+                            <button
+                              className="ml-auto p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                              title="Expand schema"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setSchemaDialogTool(tool)
+                              }}
+                            >
+                              <Expand className="h-3.5 w-3.5" />
+                            </button>
                           )}
-                          Schema
-                        </button>
+                        </div>
                         
                         {expandedSchemas.has(tool.name) && (
-                          <pre className="text-xs bg-muted p-2 rounded mt-2 overflow-auto max-h-32">
-                            {JSON.stringify(tool.inputSchema, null, 2)}
-                          </pre>
+                          <div className="mt-2 h-32">
+                            <JsonEditor
+                              value={JSON.stringify(tool.inputSchema, null, 2)}
+                              readOnly
+                              height="100%"
+                            />
+                          </div>
                         )}
                       </div>
                     ))}
@@ -554,13 +699,32 @@ export function ToolsTab() {
                                         {prop.description}
                                       </p>
                                     )}
-                                    <Input
-                                      value={formValues[key] || ''}
-                                      onChange={(e) =>
-                                        updateFormValue(key, e.target.value)
-                                      }
-                                      placeholder={`Enter ${key}`}
-                                    />
+                                    {prop.type === 'object' || prop.type === 'array' ? (
+                                      <div className="relative">
+                                        <div className="h-36">
+                                          <JsonEditor
+                                            value={formValues[key] || (prop.type === 'array' ? '[]' : '{}')}
+                                            onChange={(val) => updateFormValue(key, val)}
+                                            height="100%"
+                                          />
+                                        </div>
+                                        <button
+                                          className="absolute top-1 right-1 z-10 p-1 rounded bg-background/80 border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                                          title={`Expand ${key}`}
+                                          onClick={() => setExpandedFieldKey(key)}
+                                        >
+                                          <Expand className="h-3.5 w-3.5" />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <Input
+                                        value={formValues[key] || ''}
+                                        onChange={(e) =>
+                                          updateFormValue(key, e.target.value)
+                                        }
+                                        placeholder={`Enter ${key}`}
+                                      />
+                                    )}
                                   </div>
                                 )
                               }
@@ -590,20 +754,78 @@ export function ToolsTab() {
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-lg flex items-center gap-2">
                         Result
-                        {callToolMutation.isPending && (
+                        {(callToolMutation.isPending || isLoadingAppHtml) && (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         )}
                       </CardTitle>
-                      {parsedResult && (
-                        <Button variant="ghost" size="sm" onClick={handleCopyResult}>
-                          <Copy className="h-4 w-4 mr-1" />
-                          Copy
-                        </Button>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {isAppTool && parsedResult && (
+                          <div className="flex items-center border rounded-md p-0.5">
+                            <button
+                              className={cn(
+                                'px-2 py-1 text-xs rounded transition-colors flex items-center gap-1',
+                                resultViewMode === 'ui'
+                                  ? 'bg-primary text-primary-foreground'
+                                  : 'hover:bg-muted'
+                              )}
+                              onClick={() => setResultViewMode('ui')}
+                            >
+                              <Layout className="h-3 w-3" />
+                              UI
+                            </button>
+                            <button
+                              className={cn(
+                                'px-2 py-1 text-xs rounded transition-colors flex items-center gap-1',
+                                resultViewMode === 'json'
+                                  ? 'bg-primary text-primary-foreground'
+                                  : 'hover:bg-muted'
+                              )}
+                              onClick={() => setResultViewMode('json')}
+                            >
+                              <Code className="h-3 w-3" />
+                              JSON
+                            </button>
+                          </div>
+                        )}
+                        {parsedResult && resultViewMode === 'json' && (
+                          <Button variant="ghost" size="sm" onClick={handleCopyResult}>
+                            <Copy className="h-4 w-4 mr-1" />
+                            Copy
+                          </Button>
+                        )}
+                        {(parsedResult || (resultViewMode === 'ui' && appHtml)) && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setResultExpanded(true)}
+                            title="Expand result"
+                          >
+                            <Expand className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent className="flex-1 overflow-hidden min-h-0">
-                    {parsedResult ? (
+                    {resultViewMode === 'ui' && appHtml ? (
+                      <div className="h-full">
+                        <McpAppViewer
+                          html={appHtml}
+                          toolName={selectedTool?.name || ''}
+                          tool={selectedTool || undefined}
+                          toolArgs={(() => {
+                            try {
+                              return inputMode === 'json' ? JSON.parse(toolArgs) : formValues
+                            } catch {
+                              return formValues
+                            }
+                          })()}
+                          toolResult={toolResult}
+                          onCallTool={handleCallToolFromApp}
+                          onReadResource={handleReadResourceFromApp}
+                        />
+                      </div>
+                    ) : parsedResult ? (
                       <div className="h-full">
                         <JsonEditor
                           value={parsedResult.isJson ? JSON.stringify(parsedResult.data, null, 2) : parsedResult.rawText}
@@ -625,6 +847,147 @@ export function ToolsTab() {
           </div>
         </Panel>
       </PanelGroup>
+
+      {/* Schema Expand Dialog */}
+      <Dialog open={!!schemaDialogTool} onOpenChange={(open) => { if (!open) setSchemaDialogTool(null) }}>
+        <DialogContent className="max-w-4xl w-[90vw] h-[80vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-6 pb-3 flex-shrink-0">
+            <DialogTitle className="flex items-center gap-2 font-mono text-base">
+              <Code className="h-4 w-4" />
+              {schemaDialogTool?.name}
+              <Badge variant="outline" className="text-xs font-sans">Input Schema</Badge>
+            </DialogTitle>
+            {schemaDialogTool?.description && (
+              <p className="text-sm text-muted-foreground mt-1">{schemaDialogTool.description}</p>
+            )}
+          </DialogHeader>
+          <div className="flex-1 min-h-0 px-6 pb-6">
+            {schemaDialogTool && (
+              <JsonEditor
+                value={JSON.stringify(schemaDialogTool.inputSchema, null, 2)}
+                readOnly
+                height="100%"
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Field Editor Dialog */}
+      <Dialog open={!!expandedFieldKey} onOpenChange={(open) => { if (!open) setExpandedFieldKey(null) }}>
+        <DialogContent className="max-w-5xl w-[90vw] h-[85vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-5 pb-3 flex-shrink-0 border-b border-border">
+            {(() => {
+              const fieldSchema = expandedFieldKey
+                ? selectedTool?.inputSchema.properties?.[expandedFieldKey] as { type?: string; description?: string } | undefined
+                : undefined
+              return (
+                <>
+                  <DialogTitle className="flex items-center gap-2 text-base">
+                    <Code className="h-4 w-4" />
+                    <span className="font-mono">{expandedFieldKey}</span>
+                    {fieldSchema?.type && (
+                      <Badge variant="outline" className="text-xs font-sans">{fieldSchema.type}</Badge>
+                    )}
+                  </DialogTitle>
+                  {fieldSchema?.description && (
+                    <p className="text-sm text-muted-foreground mt-1">{fieldSchema.description}</p>
+                  )}
+                </>
+              )
+            })()}
+          </DialogHeader>
+          <div className="flex-1 min-h-0 px-6 pb-6 pt-3">
+            {expandedFieldKey && (
+              <JsonEditor
+                value={formValues[expandedFieldKey] || '{}'}
+                onChange={(val) => updateFormValue(expandedFieldKey, val)}
+                height="100%"
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Result Expand Dialog */}
+      <Dialog open={resultExpanded} onOpenChange={setResultExpanded}>
+        <DialogContent className="max-w-[95vw] w-[95vw] h-[92vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-5 pb-3 flex-shrink-0 border-b border-border">
+            <div className="flex items-center justify-between">
+              <DialogTitle className="flex items-center gap-2 text-base">
+                Result
+                {selectedTool && (
+                  <Badge variant="outline" className="text-xs font-mono">{selectedTool.name}</Badge>
+                )}
+              </DialogTitle>
+              <div className="flex items-center gap-2 mr-8">
+                {isAppTool && parsedResult && (
+                  <div className="flex items-center border rounded-md p-0.5">
+                    <button
+                      className={cn(
+                        'px-2 py-1 text-xs rounded transition-colors flex items-center gap-1',
+                        resultViewMode === 'ui'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'hover:bg-muted'
+                      )}
+                      onClick={() => setResultViewMode('ui')}
+                    >
+                      <Layout className="h-3 w-3" />
+                      UI
+                    </button>
+                    <button
+                      className={cn(
+                        'px-2 py-1 text-xs rounded transition-colors flex items-center gap-1',
+                        resultViewMode === 'json'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'hover:bg-muted'
+                      )}
+                      onClick={() => setResultViewMode('json')}
+                    >
+                      <Code className="h-3 w-3" />
+                      JSON
+                    </button>
+                  </div>
+                )}
+                {parsedResult && resultViewMode === 'json' && (
+                  <Button variant="ghost" size="sm" onClick={handleCopyResult}>
+                    <Copy className="h-4 w-4 mr-1" />
+                    Copy
+                  </Button>
+                )}
+              </div>
+            </div>
+          </DialogHeader>
+          <div className="flex-1 min-h-0">
+            {resultViewMode === 'ui' && appHtml ? (
+              <McpAppViewer
+                html={appHtml}
+                toolName={selectedTool?.name || ''}
+                tool={selectedTool || undefined}
+                toolArgs={(() => {
+                  try {
+                    return inputMode === 'json' ? JSON.parse(toolArgs) : formValues
+                  } catch {
+                    return formValues
+                  }
+                })()}
+                toolResult={toolResult}
+                onCallTool={handleCallToolFromApp}
+                onReadResource={handleReadResourceFromApp}
+              />
+            ) : parsedResult ? (
+              <div className="h-full px-6 pb-6 pt-3">
+                <JsonEditor
+                  value={parsedResult.isJson ? JSON.stringify(parsedResult.data, null, 2) : parsedResult.rawText}
+                  onChange={() => {}}
+                  height="100%"
+                  readOnly
+                />
+              </div>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -246,45 +246,59 @@ export function ServerConfigModal({
               </div>
 
               {/* OAuth Settings */}
-              <div className="border rounded-lg p-3 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-muted-foreground" />
-                    <Label className="cursor-pointer" htmlFor="oauth-toggle">
-                      OAuth 2.1 Authentication
-                    </Label>
+              <div className={`rounded-lg border-2 transition-colors ${oauthEnabled ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                <button
+                  type="button"
+                  className="w-full flex items-center justify-between p-4 cursor-pointer"
+                  onClick={() => {
+                    const next = !oauthEnabled
+                    setOauthEnabled(next)
+                    if (next) setShowOAuthSettings(true)
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`flex items-center justify-center h-9 w-9 rounded-lg transition-colors ${oauthEnabled ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                      <Shield className="h-5 w-5" />
+                    </div>
+                    <div className="text-left">
+                      <p className="text-sm font-medium">OAuth 2.1 Authentication</p>
+                      <p className="text-xs text-muted-foreground">
+                        {oauthEnabled ? 'Enabled — auto-discovery, DCR & PKCE' : 'Click to enable secure authentication'}
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="oauth-toggle"
-                      checked={oauthEnabled}
-                      onChange={(e) => setOauthEnabled(e.target.checked)}
-                      className="h-4 w-4"
+                  <div
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${oauthEnabled ? 'bg-primary' : 'bg-muted'}`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${oauthEnabled ? 'translate-x-6' : 'translate-x-1'}`}
                     />
-                    <Button
+                  </div>
+                </button>
+
+                {oauthEnabled && (
+                  <div className="px-4 pb-4">
+                    <button
                       type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0"
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                       onClick={() => setShowOAuthSettings(!showOAuthSettings)}
                     >
-                      {showOAuthSettings ? (
-                        <ChevronUp className="h-4 w-4" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                </div>
-
-                {showOAuthSettings && oauthEnabled && (
-                  <div className="text-sm text-muted-foreground pt-2 border-t">
-                    <p>
-                      OAuth settings will be automatically discovered from the server's
-                      metadata. The client will handle Dynamic Client Registration (DCR)
-                      and PKCE automatically.
-                    </p>
+                      {showOAuthSettings ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                      {showOAuthSettings ? 'Hide details' : 'Show details'}
+                    </button>
+                    {showOAuthSettings && (
+                      <div className="mt-3 p-3 rounded-md bg-muted/50 text-sm text-muted-foreground space-y-2">
+                        <p>
+                          OAuth settings will be automatically discovered from the server's
+                          metadata. The client will handle Dynamic Client Registration (DCR)
+                          and PKCE automatically.
+                        </p>
+                        <div className="flex items-center gap-2 text-xs font-mono bg-background rounded px-2 py-1.5 border">
+                          <span className="text-muted-foreground">Redirect URI:</span>
+                          <span className="truncate">{window.location.origin}/oauth/callback</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

@@ -70,6 +70,13 @@ export interface Tool {
     properties?: Record<string, unknown>;
     required?: string[];
   };
+  _meta?: {
+    ui?: {
+      resourceUri?: string;
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  };
 }
 
 export interface Resource {

@@ -46,6 +46,14 @@ export interface ConnectionStatus {
   oauth?: OAuthStatus
 }
 
+export interface ConnectionStep {
+  id: string
+  label: string
+  status: 'pending' | 'active' | 'done' | 'error'
+  timestamp: number
+  detail?: string
+}
+
 export interface Server {
   id: string
   name: string
@@ -54,6 +62,7 @@ export interface Server {
   isConnecting: boolean
   isAuthorizing: boolean
   createdAt: number
+  connectionSteps: ConnectionStep[]
 }
 
 interface ServersState {
@@ -61,7 +70,7 @@ interface ServersState {
   activeServerId: string | null
   
   // Actions
-  addServer: (server: Omit<Server, 'id' | 'status' | 'isConnecting' | 'isAuthorizing' | 'createdAt'>) => string
+  addServer: (server: Omit<Server, 'id' | 'status' | 'isConnecting' | 'isAuthorizing' | 'createdAt' | 'connectionSteps'>) => string
   removeServer: (id: string) => void
   updateServer: (id: string, updates: Partial<Omit<Server, 'id' | 'createdAt'>>) => void
   updateServerConfig: (id: string, config: Partial<ServerConfig>) => void
@@ -74,6 +83,9 @@ interface ServersState {
   getActiveServer: () => Server | undefined
   getConnectedServers: () => Server[]
   clearServerError: (id: string) => void
+  addConnectionStep: (serverId: string, step: ConnectionStep) => void
+  updateConnectionStep: (serverId: string, stepId: string, updates: Partial<ConnectionStep>) => void
+  clearConnectionSteps: (serverId: string) => void
   reset: () => void
 }
 
@@ -124,6 +136,7 @@ export const useServersStore = create<ServersState>()(
           isConnecting: false,
           isAuthorizing: false,
           createdAt: Date.now(),
+          connectionSteps: [],
         }
         
         set((state) => ({
@@ -223,6 +236,39 @@ export const useServersStore = create<ServersState>()(
         return get().servers.filter((s) => s.status.connected)
       },
 
+      addConnectionStep: (serverId, step) => {
+        set((state) => ({
+          servers: state.servers.map((s) =>
+            s.id === serverId
+              ? { ...s, connectionSteps: [...s.connectionSteps, step] }
+              : s
+          ),
+        }))
+      },
+
+      updateConnectionStep: (serverId, stepId, updates) => {
+        set((state) => ({
+          servers: state.servers.map((s) =>
+            s.id === serverId
+              ? {
+                  ...s,
+                  connectionSteps: s.connectionSteps.map((step) =>
+                    step.id === stepId ? { ...step, ...updates } : step
+                  ),
+                }
+              : s
+          ),
+        }))
+      },
+
+      clearConnectionSteps: (serverId) => {
+        set((state) => ({
+          servers: state.servers.map((s) =>
+            s.id === serverId ? { ...s, connectionSteps: [] } : s
+          ),
+        }))
+      },
+
       clearServerError: (id) => {
         set((state) => ({
           servers: state.servers.map((s) =>
@@ -246,9 +292,10 @@ export const useServersStore = create<ServersState>()(
       partialize: (state) => ({
         servers: state.servers.map((s) => ({
           ...s,
-          status: { connected: false }, // Reset connection status
+          status: { connected: false },
           isConnecting: false,
           isAuthorizing: false,
+          connectionSteps: [],
         })),
         activeServerId: state.activeServerId,
       }),

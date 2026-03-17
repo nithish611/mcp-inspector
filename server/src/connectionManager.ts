@@ -77,6 +77,7 @@ class ConnectionManager {
     try {
       // For HTTP-based transports with OAuth, check authorization first
       if ((config.type === 'sse' || config.type === 'streamable-http') && config.oauth?.enabled) {
+        httpLogger.logNotification('oauth:authorize_start', { transport: config.type }, logOptions);
         const oauthResult = await this.checkOAuthAuthorizationForConnection(conn, config);
         if (oauthResult.authorizationRequired) {
           conn.status = {
@@ -86,7 +87,10 @@ class ConnectionManager {
           wsManager.broadcastConnectionStatus(conn.status, serverId);
           return conn.status;
         }
+        httpLogger.logNotification('oauth:authorize_complete', { transport: config.type }, logOptions);
       }
+
+      httpLogger.logNotification('transport:creating', { type: config.type }, logOptions);
 
       conn.client = new Client({
         name: 'mcp-client-ui',
@@ -115,8 +119,12 @@ class ConnectionManager {
         throw new Error('Transport not initialized');
       }
 
+      httpLogger.logNotification('transport:created', { type: config.type }, logOptions);
+
       httpLogger.logRequest('initialize', {}, undefined, logOptions);
       await conn.client.connect(conn.transport);
+
+      httpLogger.logNotification('capabilities:fetching', {}, logOptions);
 
       // Get server info
       const serverInfo = conn.client.getServerVersion();
@@ -507,141 +515,224 @@ class ConnectionManager {
     return httpInfo;
   }
 
-  // Tools
-  async listTools(serverId: string): Promise<Tool[]> {
-    const conn = this.connections.get(serverId);
-    if (!conn?.client || !conn.status.connected) {
-      throw new Error(`Not connected to MCP server [${serverId}]`);
-    }
+  private isAuthError(error: unknown): boolean {
+    const msg = error instanceof Error ? error.message : String(error);
+    return msg.includes('401') || msg.includes('Unauthorized') ||
+           msg.includes('Authorization header') || msg.includes('Missing or invalid Authorization') ||
+           msg.includes('token expired') || msg.includes('Token expired') ||
+           msg.includes('invalid_token');
+  }
 
-    const requestId = Date.now();
-    const httpInfo = this.getHttpInfo(conn);
-    const logOptions = { serverId, serverName: this.getServerName(serverId), http: httpInfo };
-    httpLogger.logRequest('tools/list', {}, requestId, logOptions);
+  private async refreshAndReconnect(serverId: string): Promise<boolean> {
+    const conn = this.connections.get(serverId);
+    if (!conn?.config?.url || !conn.config.oauth?.enabled) return false;
 
     try {
-      const result = await conn.client.listTools();
-      httpLogger.logResponse(result, requestId, undefined, logOptions);
-      return result.tools as Tool[];
+      const newToken = await getAccessToken(conn.config.url, conn.config.oauth);
+      if (!newToken) return false;
+
+      conn.accessToken = newToken;
+      await this.disconnectTransport(conn);
+
+      conn.client = new Client({ name: 'mcp-client-ui', version: '1.0.0' }, { capabilities: {} });
+
+      switch (conn.config.type) {
+        case 'sse': await this.connectSSE(conn, conn.config); break;
+        case 'streamable-http': await this.connectStreamableHttp(conn, conn.config); break;
+        default: return false;
+      }
+
+      if (!conn.transport) return false;
+      await conn.client.connect(conn.transport);
+
+      const serverInfo = conn.client.getServerVersion();
+      const capabilities = conn.client.getServerCapabilities();
+      conn.status = {
+        connected: true,
+        serverInfo: serverInfo ? { name: serverInfo.name, version: serverInfo.version } : undefined,
+        capabilities: { tools: !!capabilities?.tools, resources: !!capabilities?.resources, prompts: !!capabilities?.prompts },
+        oauth: { authenticated: true },
+      };
+      wsManager.broadcastConnectionStatus(conn.status, serverId);
+      console.log(`[ConnectionManager] Token refreshed and reconnected for [${serverId}]`);
+      return true;
     } catch (error) {
-      httpLogger.logResponse(null, requestId, error, logOptions);
+      console.error(`[ConnectionManager] refreshAndReconnect failed for [${serverId}]:`, error);
+      return false;
+    }
+  }
+
+  private async withAuthRetry<T>(serverId: string, operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (this.isAuthError(error)) {
+        console.log(`[ConnectionManager] Auth error on operation for [${serverId}], attempting refresh...`);
+        const refreshed = await this.refreshAndReconnect(serverId);
+        if (refreshed) {
+          return await operation();
+        }
+        const conn = this.connections.get(serverId);
+        if (conn) {
+          conn.status = {
+            connected: false,
+            oauth: { authenticated: false, authorizationRequired: true },
+            error: 'Session expired. Please reconnect.',
+          };
+          wsManager.broadcastConnectionStatus(conn.status, serverId);
+        }
+      }
       throw error;
     }
   }
 
+  // Tools
+  async listTools(serverId: string): Promise<Tool[]> {
+    return this.withAuthRetry(serverId, async () => {
+      const conn = this.connections.get(serverId);
+      if (!conn?.client || !conn.status.connected) {
+        throw new Error(`Not connected to MCP server [${serverId}]`);
+      }
+
+      const requestId = Date.now();
+      const httpInfo = this.getHttpInfo(conn);
+      const logOptions = { serverId, serverName: this.getServerName(serverId), http: httpInfo };
+      httpLogger.logRequest('tools/list', {}, requestId, logOptions);
+
+      try {
+        const result = await conn.client.listTools();
+        httpLogger.logResponse(result, requestId, undefined, logOptions);
+        return result.tools as Tool[];
+      } catch (error) {
+        httpLogger.logResponse(null, requestId, error, logOptions);
+        throw error;
+      }
+    });
+  }
+
   async callTool(serverId: string, request: ToolCallRequest): Promise<unknown> {
-    const conn = this.connections.get(serverId);
-    if (!conn?.client || !conn.status.connected) {
-      throw new Error(`Not connected to MCP server [${serverId}]`);
-    }
+    return this.withAuthRetry(serverId, async () => {
+      const conn = this.connections.get(serverId);
+      if (!conn?.client || !conn.status.connected) {
+        throw new Error(`Not connected to MCP server [${serverId}]`);
+      }
 
-    const requestId = Date.now();
-    const httpInfo = this.getHttpInfo(conn);
-    const logOptions = { serverId, serverName: this.getServerName(serverId), http: httpInfo };
-    httpLogger.logRequest('tools/call', request, requestId, logOptions);
+      const requestId = Date.now();
+      const httpInfo = this.getHttpInfo(conn);
+      const logOptions = { serverId, serverName: this.getServerName(serverId), http: httpInfo };
+      httpLogger.logRequest('tools/call', request, requestId, logOptions);
 
-    try {
-      const result = await conn.client.callTool({
-        name: request.name,
-        arguments: request.arguments,
-      });
-      httpLogger.logResponse(result, requestId, undefined, logOptions);
-      return result;
-    } catch (error) {
-      httpLogger.logResponse(null, requestId, error, logOptions);
-      throw error;
-    }
+      try {
+        const result = await conn.client.callTool({
+          name: request.name,
+          arguments: request.arguments,
+        });
+        httpLogger.logResponse(result, requestId, undefined, logOptions);
+        return result;
+      } catch (error) {
+        httpLogger.logResponse(null, requestId, error, logOptions);
+        throw error;
+      }
+    });
   }
 
   // Resources
   async listResources(serverId: string): Promise<Resource[]> {
-    const conn = this.connections.get(serverId);
-    if (!conn?.client || !conn.status.connected) {
-      throw new Error(`Not connected to MCP server [${serverId}]`);
-    }
+    return this.withAuthRetry(serverId, async () => {
+      const conn = this.connections.get(serverId);
+      if (!conn?.client || !conn.status.connected) {
+        throw new Error(`Not connected to MCP server [${serverId}]`);
+      }
 
-    const requestId = Date.now();
-    const httpInfo = this.getHttpInfo(conn);
-    const logOptions = { serverId, serverName: this.getServerName(serverId), http: httpInfo };
-    httpLogger.logRequest('resources/list', {}, requestId, logOptions);
+      const requestId = Date.now();
+      const httpInfo = this.getHttpInfo(conn);
+      const logOptions = { serverId, serverName: this.getServerName(serverId), http: httpInfo };
+      httpLogger.logRequest('resources/list', {}, requestId, logOptions);
 
-    try {
-      const result = await conn.client.listResources();
-      httpLogger.logResponse(result, requestId, undefined, logOptions);
-      return result.resources as Resource[];
-    } catch (error) {
-      httpLogger.logResponse(null, requestId, error, logOptions);
-      throw error;
-    }
+      try {
+        const result = await conn.client.listResources();
+        httpLogger.logResponse(result, requestId, undefined, logOptions);
+        return result.resources as Resource[];
+      } catch (error) {
+        httpLogger.logResponse(null, requestId, error, logOptions);
+        throw error;
+      }
+    });
   }
 
   async readResource(serverId: string, request: ResourceReadRequest): Promise<unknown> {
-    const conn = this.connections.get(serverId);
-    if (!conn?.client || !conn.status.connected) {
-      throw new Error(`Not connected to MCP server [${serverId}]`);
-    }
+    return this.withAuthRetry(serverId, async () => {
+      const conn = this.connections.get(serverId);
+      if (!conn?.client || !conn.status.connected) {
+        throw new Error(`Not connected to MCP server [${serverId}]`);
+      }
 
-    const requestId = Date.now();
-    const httpInfo = this.getHttpInfo(conn);
-    const logOptions = { serverId, serverName: this.getServerName(serverId), http: httpInfo };
-    httpLogger.logRequest('resources/read', request, requestId, logOptions);
+      const requestId = Date.now();
+      const httpInfo = this.getHttpInfo(conn);
+      const logOptions = { serverId, serverName: this.getServerName(serverId), http: httpInfo };
+      httpLogger.logRequest('resources/read', request, requestId, logOptions);
 
-    try {
-      const result = await conn.client.readResource({
-        uri: request.uri,
-      });
-      httpLogger.logResponse(result, requestId, undefined, logOptions);
-      return result;
-    } catch (error) {
-      httpLogger.logResponse(null, requestId, error, logOptions);
-      throw error;
-    }
+      try {
+        const result = await conn.client.readResource({
+          uri: request.uri,
+        });
+        httpLogger.logResponse(result, requestId, undefined, logOptions);
+        return result;
+      } catch (error) {
+        httpLogger.logResponse(null, requestId, error, logOptions);
+        throw error;
+      }
+    });
   }
 
   // Prompts
   async listPrompts(serverId: string): Promise<Prompt[]> {
-    const conn = this.connections.get(serverId);
-    if (!conn?.client || !conn.status.connected) {
-      throw new Error(`Not connected to MCP server [${serverId}]`);
-    }
+    return this.withAuthRetry(serverId, async () => {
+      const conn = this.connections.get(serverId);
+      if (!conn?.client || !conn.status.connected) {
+        throw new Error(`Not connected to MCP server [${serverId}]`);
+      }
 
-    const requestId = Date.now();
-    const httpInfo = this.getHttpInfo(conn);
-    const logOptions = { serverId, serverName: this.getServerName(serverId), http: httpInfo };
-    httpLogger.logRequest('prompts/list', {}, requestId, logOptions);
+      const requestId = Date.now();
+      const httpInfo = this.getHttpInfo(conn);
+      const logOptions = { serverId, serverName: this.getServerName(serverId), http: httpInfo };
+      httpLogger.logRequest('prompts/list', {}, requestId, logOptions);
 
-    try {
-      const result = await conn.client.listPrompts();
-      httpLogger.logResponse(result, requestId, undefined, logOptions);
-      return result.prompts as Prompt[];
-    } catch (error) {
-      httpLogger.logResponse(null, requestId, error, logOptions);
-      throw error;
-    }
+      try {
+        const result = await conn.client.listPrompts();
+        httpLogger.logResponse(result, requestId, undefined, logOptions);
+        return result.prompts as Prompt[];
+      } catch (error) {
+        httpLogger.logResponse(null, requestId, error, logOptions);
+        throw error;
+      }
+    });
   }
 
   async getPrompt(serverId: string, request: PromptGetRequest): Promise<unknown> {
-    const conn = this.connections.get(serverId);
-    if (!conn?.client || !conn.status.connected) {
-      throw new Error(`Not connected to MCP server [${serverId}]`);
-    }
+    return this.withAuthRetry(serverId, async () => {
+      const conn = this.connections.get(serverId);
+      if (!conn?.client || !conn.status.connected) {
+        throw new Error(`Not connected to MCP server [${serverId}]`);
+      }
 
-    const requestId = Date.now();
-    const httpInfo = this.getHttpInfo(conn);
-    const logOptions = { serverId, serverName: this.getServerName(serverId), http: httpInfo };
-    httpLogger.logRequest('prompts/get', request, requestId, logOptions);
+      const requestId = Date.now();
+      const httpInfo = this.getHttpInfo(conn);
+      const logOptions = { serverId, serverName: this.getServerName(serverId), http: httpInfo };
+      httpLogger.logRequest('prompts/get', request, requestId, logOptions);
 
-    try {
-      const result = await conn.client.getPrompt({
-        name: request.name,
-        arguments: request.arguments,
-      });
-      httpLogger.logResponse(result, requestId, undefined, logOptions);
-      return result;
-    } catch (error) {
-      httpLogger.logResponse(null, requestId, error, logOptions);
-      throw error;
-    }
+      try {
+        const result = await conn.client.getPrompt({
+          name: request.name,
+          arguments: request.arguments,
+        });
+        httpLogger.logResponse(result, requestId, undefined, logOptions);
+        return result;
+      } catch (error) {
+        httpLogger.logResponse(null, requestId, error, logOptions);
+        throw error;
+      }
+    });
   }
 }
 

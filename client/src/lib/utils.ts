@@ -63,7 +63,15 @@ export interface McpContent {
 
 export interface McpResult {
   content?: McpContent[]
+  structuredContent?: unknown
   isError?: boolean
+  _meta?: {
+    ui?: {
+      resourceUri?: string
+      [key: string]: unknown
+    }
+    [key: string]: unknown
+  }
   [key: string]: unknown
 }
 
@@ -78,6 +86,8 @@ export interface ParsedMcpResult {
   isError: boolean
   /** Content type (text, image, etc.) */
   contentType: string
+  /** Structured content returned by MCP App tools for UI rendering */
+  structuredContent?: unknown
 }
 
 export function parseMcpResult(result: unknown): ParsedMcpResult {
@@ -94,6 +104,8 @@ export function parseMcpResult(result: unknown): ParsedMcpResult {
 
   // Check if it's an MCP-formatted result with content array
   const mcpResult = result as McpResult
+  const structuredContent = mcpResult.structuredContent
+
   if (mcpResult.content && Array.isArray(mcpResult.content) && mcpResult.content.length > 0) {
     const firstContent = mcpResult.content[0]
     const contentType = firstContent.type || 'text'
@@ -112,6 +124,7 @@ export function parseMcpResult(result: unknown): ParsedMcpResult {
           isJson: true,
           isError,
           contentType,
+          structuredContent,
         }
       } catch {
         // Not valid JSON, return as raw text
@@ -121,6 +134,7 @@ export function parseMcpResult(result: unknown): ParsedMcpResult {
           isJson: false,
           isError,
           contentType,
+          structuredContent,
         }
       }
     }
@@ -133,6 +147,7 @@ export function parseMcpResult(result: unknown): ParsedMcpResult {
         isJson: false,
         isError,
         contentType,
+        structuredContent,
       }
     }
     
@@ -143,6 +158,7 @@ export function parseMcpResult(result: unknown): ParsedMcpResult {
       isJson: false,
       isError,
       contentType,
+      structuredContent,
     }
   }
 
@@ -154,5 +170,6 @@ export function parseMcpResult(result: unknown): ParsedMcpResult {
     isJson: typeof result === 'object',
     isError: false,
     contentType: 'unknown',
+    structuredContent,
   }
 }

@@ -39,6 +39,8 @@ export interface LogEntry {
 
 export type LogFilter = 'all' | 'request' | 'response' | 'notification' | 'error'
 
+export type MethodCategory = 'all' | 'tools' | 'resources' | 'prompts' | 'connection' | 'oauth'
+
 interface LogsState {
   logs: LogEntry[]
   filter: LogFilter

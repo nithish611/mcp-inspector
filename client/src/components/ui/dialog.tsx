@@ -43,6 +43,18 @@ function Dialog({ open, onOpenChange, children }: DialogProps) {
 
 function DialogContent({ className, children, ...props }: DialogContentProps) {
   const context = React.useContext(DialogContext)
+
+  React.useEffect(() => {
+    if (!context?.open) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        context.onOpenChange(false)
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [context])
   
   if (!context?.open) return null
 
@@ -118,11 +130,11 @@ function DialogFooter({ className, children, ...props }: DialogFooterProps) {
 }
 
 export {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
 }
 

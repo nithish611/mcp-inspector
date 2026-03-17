@@ -8,6 +8,7 @@ import {
     useLogsStore,
     type LogEntry,
     type LogFilter,
+    type MethodCategory,
 } from '@/stores/logsStore'
 import { useServersStore } from '@/stores/serversStore'
 import {
@@ -16,17 +17,24 @@ import {
     ArrowDownLeft,
     ArrowUpRight,
     Bell,
+    ChevronDown,
     ChevronRight,
     Clock,
     Code,
     Copy,
     Download,
     Filter,
+    FolderOpen,
     Hash,
+    KeyRound,
+    Link,
+    MessageSquare,
     Search,
     Server,
+    Tag,
     Terminal,
     Trash2,
+    Wrench,
     X,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -39,6 +47,31 @@ const filterOptions: Array<{ value: LogFilter; label: string }> = [
   { value: 'notification', label: 'Notifications' },
   { value: 'error', label: 'Errors' },
 ]
+
+const categoryOptions: Array<{ value: MethodCategory; label: string; icon: typeof Wrench }> = [
+  { value: 'all', label: 'All', icon: Activity },
+  { value: 'tools', label: 'Tools', icon: Wrench },
+  { value: 'resources', label: 'Resources', icon: FolderOpen },
+  { value: 'prompts', label: 'Prompts', icon: MessageSquare },
+  { value: 'connection', label: 'Connection', icon: Link },
+  { value: 'oauth', label: 'OAuth', icon: KeyRound },
+]
+
+const categoryMethodPatterns: Record<MethodCategory, (method: string) => boolean> = {
+  all: () => true,
+  tools: (m) => m.startsWith('tools/'),
+  resources: (m) => m.startsWith('resources/'),
+  prompts: (m) => m.startsWith('prompts/'),
+  connection: (m) => m.startsWith('connection:') || m === 'initialize' || m.startsWith('server:'),
+  oauth: (m) => m.startsWith('oauth:'),
+}
+
+function getToolNameFromLog(log: LogEntry): string | null {
+  if (log.method !== 'tools/call' || !log.params) return null
+  const params = log.params as Record<string, unknown>
+  if (typeof params.name === 'string') return params.name
+  return null
+}
 
 interface LogsTabProps {
   onClearLogs?: () => void
@@ -61,43 +94,77 @@ export function LogsTab({ onClearLogs }: LogsTabProps) {
 
   const [detailTab, setDetailTab] = useState<'overview' | 'request' | 'response' | 'headers'>('overview')
   const [showAllServers, setShowAllServers] = useState(false)
+  const [methodCategory, setMethodCategory] = useState<MethodCategory>('all')
+  const [toolNameFilter, setToolNameFilter] = useState<string | null>(null)
+  const [showToolDropdown, setShowToolDropdown] = useState(false)
+  const toolDropdownRef = useRef<HTMLDivElement>(null)
 
   const filteredLogs = useMemo(() => {
     let filtered = logs
 
-    // Apply server filter (filter by active server unless "show all" is enabled)
     if (!showAllServers && activeServerId) {
       filtered = filtered.filter((log) => log.serverId === activeServerId)
     }
 
-    // Apply direction filter
     if (filter !== 'all') {
       filtered = filtered.filter((log) => log.direction === filter)
     }
 
-    // Apply search filter
+    if (methodCategory !== 'all') {
+      filtered = filtered.filter((log) => categoryMethodPatterns[methodCategory](log.method))
+    }
+
+    if (toolNameFilter) {
+      filtered = filtered.filter((log) => {
+        const name = getToolNameFromLog(log)
+        return name === toolNameFilter
+      })
+    }
+
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
       filtered = filtered.filter(
         (log) =>
           log.method.toLowerCase().includes(query) ||
           JSON.stringify(log.params).toLowerCase().includes(query) ||
-          JSON.stringify(log.result).toLowerCase().includes(query)
+          JSON.stringify(log.result).toLowerCase().includes(query) ||
+          (log.error ? JSON.stringify(log.error).toLowerCase().includes(query) : false) ||
+          (log.serverName?.toLowerCase().includes(query) ?? false) ||
+          (log.http?.url?.toLowerCase().includes(query) ?? false)
       )
     }
 
     return filtered
-  }, [logs, filter, searchQuery, activeServerId, showAllServers])
+  }, [logs, filter, searchQuery, activeServerId, showAllServers, methodCategory, toolNameFilter])
+
+  const uniqueToolNames = useMemo(() => {
+    const names = new Set<string>()
+    for (const log of logs) {
+      const name = getToolNameFromLog(log)
+      if (name) names.add(name)
+    }
+    return Array.from(names).sort()
+  }, [logs])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const selectedLog = logs.find((log) => log.id === selectedLogId)
 
-  // Auto-scroll to bottom when new logs arrive
   useEffect(() => {
     if (scrollRef.current && !selectedLogId) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [logs.length, selectedLogId])
+
+  useEffect(() => {
+    if (!showToolDropdown) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (toolDropdownRef.current && !toolDropdownRef.current.contains(e.target as Node)) {
+        setShowToolDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showToolDropdown])
 
   const handleClearLogs = () => {
     clearLogs()
@@ -257,6 +324,92 @@ export function LogsTab({ onClearLogs }: LogsTabProps) {
         </div>
       </div>
 
+      {/* Method Category Chips */}
+      <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border flex-shrink-0 bg-muted/20">
+        <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+        <div className="flex items-center gap-1">
+          {categoryOptions.map((option) => {
+            const Icon = option.icon
+            const isActive = methodCategory === option.value
+            return (
+              <button
+                key={option.value}
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-full transition-colors',
+                  isActive
+                    ? 'bg-primary text-primary-foreground'
+                    : 'hover:bg-muted text-muted-foreground hover:text-foreground'
+                )}
+                onClick={() => {
+                  setMethodCategory(option.value)
+                  if (option.value !== 'tools') {
+                    setToolNameFilter(null)
+                    setShowToolDropdown(false)
+                  }
+                }}
+              >
+                <Icon className="h-3 w-3" />
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
+
+        {methodCategory === 'tools' && uniqueToolNames.length > 0 && (
+          <div className="relative" ref={toolDropdownRef}>
+            <button
+              className={cn(
+                'flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-full border transition-colors',
+                toolNameFilter
+                  ? 'bg-primary/10 border-primary/30 text-primary'
+                  : 'border-border hover:bg-muted text-muted-foreground hover:text-foreground'
+              )}
+              onClick={() => setShowToolDropdown(!showToolDropdown)}
+            >
+              <Wrench className="h-3 w-3" />
+              {toolNameFilter || 'All Tools'}
+              <ChevronDown className={cn('h-3 w-3 transition-transform', showToolDropdown && 'rotate-180')} />
+            </button>
+
+            {showToolDropdown && (
+              <div className="absolute top-full left-0 mt-1 z-50 min-w-[180px] bg-popover border border-border rounded-md shadow-md py-1">
+                <button
+                  className={cn(
+                    'w-full text-left px-3 py-1.5 text-xs transition-colors',
+                    !toolNameFilter ? 'bg-primary/10 text-primary' : 'hover:bg-muted'
+                  )}
+                  onClick={() => { setToolNameFilter(null); setShowToolDropdown(false) }}
+                >
+                  All Tools
+                </button>
+                {uniqueToolNames.map((name) => (
+                  <button
+                    key={name}
+                    className={cn(
+                      'w-full text-left px-3 py-1.5 text-xs font-mono transition-colors',
+                      toolNameFilter === name ? 'bg-primary/10 text-primary' : 'hover:bg-muted'
+                    )}
+                    onClick={() => { setToolNameFilter(name); setShowToolDropdown(false) }}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {(methodCategory !== 'all' || toolNameFilter) && (
+          <button
+            className="ml-auto flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => { setMethodCategory('all'); setToolNameFilter(null); setShowToolDropdown(false) }}
+          >
+            <X className="h-3 w-3" />
+            Clear filters
+          </button>
+        )}
+      </div>
+
       {/* Content - Split View */}
       <div className="flex-1 overflow-hidden">
         <PanelGroup direction="horizontal">
@@ -295,6 +448,14 @@ export function LogsTab({ onClearLogs }: LogsTabProps) {
                               {log.method}
                             </span>
                             {getDirectionBadge(log.direction)}
+                            {(() => {
+                              const toolName = getToolNameFromLog(log)
+                              return toolName ? (
+                                <Badge variant="outline" className="text-xs font-mono px-1.5 py-0 text-muted-foreground">
+                                  {toolName}
+                                </Badge>
+                              ) : null
+                            })()}
                           </div>
                           <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
                             <span className="font-mono">{formatDate(log.timestamp)}</span>

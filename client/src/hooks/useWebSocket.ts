@@ -1,6 +1,6 @@
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useLogsStore, type LogEntry } from '@/stores/logsStore'
-import { useServersStore } from '@/stores/serversStore'
+import { useServersStore, type ConnectionStatus, type ConnectionStep } from '@/stores/serversStore'
 import { useCallback, useEffect, useRef } from 'react'
 
 interface WSMessage {
@@ -9,13 +9,33 @@ interface WSMessage {
 }
 
 interface ConnectionStatusPayload {
-  status: {
-    connected: boolean
-    serverInfo?: { name: string; version: string }
-    capabilities?: { tools?: boolean; resources?: boolean; prompts?: boolean }
-    error?: string
-  }
+  status: ConnectionStatus
   serverId?: string
+}
+
+const CONNECTION_STEP_MAP: Record<string, { label: string; status: ConnectionStep['status'] }> = {
+  'connection:start': { label: 'Starting connection', status: 'done' },
+  'oauth:authorize_start': { label: 'Checking OAuth authorization', status: 'active' },
+  'oauth:authorize_complete': { label: 'OAuth authorization verified', status: 'done' },
+  'oauth:authorize_url_generated': { label: 'OAuth authorization URL generated', status: 'done' },
+  'oauth:callback_received': { label: 'OAuth callback received', status: 'done' },
+  'oauth:tokens_received': { label: 'OAuth tokens received', status: 'done' },
+  'oauth:token_attached': { label: 'OAuth token attached to request', status: 'done' },
+  'oauth:refresh_start': { label: 'Refreshing OAuth token', status: 'active' },
+  'oauth:refresh_success': { label: 'OAuth token refreshed', status: 'done' },
+  'transport:creating': { label: 'Creating transport', status: 'active' },
+  'transport:created': { label: 'Transport ready', status: 'done' },
+  'initialize': { label: 'Initializing MCP protocol handshake', status: 'active' },
+  'capabilities:fetching': { label: 'Fetching server capabilities', status: 'active' },
+  'connection:failed': { label: 'Connection failed', status: 'error' },
+  'connection:close': { label: 'Connection closed', status: 'done' },
+  'oauth:authorize_failed': { label: 'OAuth authorization failed', status: 'error' },
+  'oauth:callback_failed': { label: 'OAuth callback failed', status: 'error' },
+  'oauth:refresh_failed': { label: 'OAuth token refresh failed', status: 'error' },
+  'oauth:revoke_start': { label: 'Revoking OAuth token', status: 'active' },
+  'oauth:revoke_complete': { label: 'OAuth token revoked', status: 'done' },
+  'oauth:revoke_failed': { label: 'OAuth revocation failed', status: 'error' },
+  'oauth:cleared': { label: 'OAuth state cleared', status: 'done' },
 }
 
 export function useWebSocket() {
@@ -26,6 +46,8 @@ export function useWebSocket() {
   const clearLogs = useLogsStore((state) => state.clearLogs)
   const setStatus = useConnectionStore((state) => state.setStatus)
   const setServerStatus = useServersStore((state) => state.setServerStatus)
+  const addConnectionStep = useServersStore((state) => state.addConnectionStep)
+  const updateConnectionStep = useServersStore((state) => state.updateConnectionStep)
   const activeServerId = useServersStore((state) => state.activeServerId)
 
   const connect = useCallback(() => {
@@ -73,9 +95,32 @@ export function useWebSocket() {
   const handleMessage = useCallback(
     (message: WSMessage) => {
       switch (message.type) {
-        case 'log:new':
-          addLog(message.payload as LogEntry)
+        case 'log:new': {
+          const logEntry = message.payload as LogEntry
+          addLog(logEntry)
+
+          if (logEntry.serverId) {
+            const stepDef = CONNECTION_STEP_MAP[logEntry.method]
+            if (stepDef) {
+              const store = useServersStore.getState()
+              const server = store.servers.find(s => s.id === logEntry.serverId)
+              if (server) {
+                const activeStep = server.connectionSteps.find(s => s.status === 'active')
+                if (activeStep && stepDef.status !== 'error') {
+                  updateConnectionStep(logEntry.serverId, activeStep.id, { status: 'done' })
+                }
+              }
+              addConnectionStep(logEntry.serverId, {
+                id: logEntry.method,
+                label: stepDef.label,
+                status: stepDef.status,
+                timestamp: Date.now(),
+                detail: logEntry.error ? String(logEntry.error) : undefined,
+              })
+            }
+          }
           break
+        }
         case 'logs:initial':
           setLogs(message.payload as LogEntry[])
           break
@@ -84,15 +129,38 @@ export function useWebSocket() {
           break
         case 'connection:status': {
           const payload = message.payload as ConnectionStatusPayload
-          // Update the servers store if serverId is provided
           if (payload.serverId) {
             setServerStatus(payload.serverId, payload.status)
-            // Only update legacy store if this is the active server
             if (payload.serverId === activeServerId) {
               setStatus(payload.status)
             }
+
+            if (payload.status.connected) {
+              updateConnectionStep(payload.serverId, 'initialize', { status: 'done' })
+              addConnectionStep(payload.serverId, {
+                id: 'connected',
+                label: `Connected to ${payload.status.serverInfo?.name || 'server'}`,
+                status: 'done',
+                timestamp: Date.now(),
+              })
+            } else if (payload.status.error) {
+              addConnectionStep(payload.serverId, {
+                id: 'error',
+                label: 'Connection failed',
+                status: 'error',
+                timestamp: Date.now(),
+                detail: payload.status.error,
+              })
+            } else if (payload.status.oauth?.authorizationRequired) {
+              addConnectionStep(payload.serverId, {
+                id: 'oauth_redirect',
+                label: 'OAuth authorization required',
+                status: 'active',
+                timestamp: Date.now(),
+                detail: 'Redirecting to authorization server...',
+              })
+            }
           } else {
-            // Fallback for legacy messages without serverId
             setStatus(payload.status)
           }
           break
@@ -104,7 +172,7 @@ export function useWebSocket() {
           console.warn('Unknown WebSocket message type:', message.type)
       }
     },
-    [addLog, setLogs, clearLogs, setStatus, setServerStatus, activeServerId]
+    [addLog, setLogs, clearLogs, setStatus, setServerStatus, addConnectionStep, updateConnectionStep, activeServerId]
   )
 
   const send = useCallback((type: string, payload?: unknown) => {

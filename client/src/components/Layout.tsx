@@ -40,6 +40,7 @@ export function Layout() {
     setServerConnecting,
     setServerStatus,
     setActiveServer,
+    clearConnectionSteps,
   } = useServersStore()
   const { logs, toggleExpanded, clearLogs } = useLogsStore()
   
@@ -238,6 +239,7 @@ export function Layout() {
     const server = servers.find((s) => s.id === serverId)
     if (!server) return
 
+    clearConnectionSteps(serverId)
     setServerConnecting(serverId, true)
     try {
       // Ensure redirectUri uses current window origin (not hardcoded port)
