@@ -1,6 +1,6 @@
 {
   "name": "@nithish611/mcp-inspector",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "A modern Model Context Protocol (MCP) client with beautiful UI, HTTP logging, and OAuth 2.1 support",
   "type": "module",
   "bin": {
