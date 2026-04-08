@@ -5,23 +5,24 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { ChildProcess, spawn } from 'child_process';
 import httpLogger from './httpLogger.js';
 import {
-    getAccessToken,
-    getOAuthStatus,
-    handle401Response,
-    handle403Response,
-    revokeAuthorization,
+  getAccessToken,
+  getOAuthStatus,
+  getPersonaToken,
+  handle401Response,
+  handle403Response,
+  revokeAuthorization,
 } from './oauth/index.js';
 import type {
-    ConnectionStatus,
-    OAuthConfig,
-    OAuthStatus,
-    Prompt,
-    PromptGetRequest,
-    Resource,
-    ResourceReadRequest,
-    ServerConfig,
-    Tool,
-    ToolCallRequest,
+  ConnectionStatus,
+  OAuthConfig,
+  OAuthStatus,
+  Prompt,
+  PromptGetRequest,
+  Resource,
+  ResourceReadRequest,
+  ServerConfig,
+  Tool,
+  ToolCallRequest,
 } from './types.js';
 import wsManager from './websocket.js';
 
@@ -622,6 +623,17 @@ class ConnectionManager {
       const logOptions = { serverId, serverName: this.getServerName(serverId), http: httpInfo };
       httpLogger.logRequest('tools/call', request, requestId, logOptions);
 
+      // If personaEmail is set and we have a persona token, make a direct HTTP call
+      // with the persona's bearer token instead of the SDK transport's baked-in token
+      if (request.personaEmail && conn.config?.url &&
+          (conn.config.type === 'streamable-http' || conn.config.type === 'sse')) {
+        const persona = getPersonaToken(serverId, request.personaEmail);
+        if (!persona) {
+          throw new Error(`No valid persona token for ${request.personaEmail}. Please exchange token first.`);
+        }
+        return this.callToolWithPersona(conn, request, persona.accessToken, requestId, logOptions);
+      }
+
       try {
         const result = await conn.client.callTool({
           name: request.name,
@@ -634,6 +646,83 @@ class ConnectionManager {
         throw error;
       }
     });
+  }
+
+  private async callToolWithPersona(
+    conn: ServerConnection,
+    request: ToolCallRequest,
+    personaAccessToken: string,
+    requestId: number,
+    logOptions: Record<string, unknown>,
+  ): Promise<unknown> {
+    const url = conn.config!.url!;
+    const jsonRpcBody = {
+      jsonrpc: '2.0',
+      id: requestId,
+      method: 'tools/call',
+      params: {
+        name: request.name,
+        arguments: request.arguments,
+      },
+    };
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json, text/event-stream',
+          'Authorization': `Bearer ${personaAccessToken}`,
+          ...conn.config?.headers,
+        },
+        body: JSON.stringify(jsonRpcBody),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+
+      // MCP Streamable HTTP may respond with SSE for long-running tool calls
+      if (contentType.includes('text/event-stream')) {
+        const text = await response.text();
+        const lines = text.split('\n');
+        let result: unknown = null;
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const parsed = JSON.parse(line.slice(6));
+              if (parsed.result !== undefined) {
+                result = parsed.result;
+              } else if (parsed.error) {
+                throw new Error(parsed.error.message || 'Tool call failed');
+              }
+            } catch (e) {
+              if (e instanceof Error && e.message.includes('Tool call failed')) throw e;
+            }
+          }
+        }
+        if (result !== null) {
+          httpLogger.logResponse(result, requestId, undefined, logOptions);
+          return result;
+        }
+        throw new Error('No result received from SSE response');
+      }
+
+      const body = await response.json() as { result?: unknown; error?: { message: string; code?: number } };
+
+      if (body.error) {
+        throw new Error(body.error.message || 'Tool call failed');
+      }
+
+      httpLogger.logResponse(body.result, requestId, undefined, logOptions);
+      return body.result;
+    } catch (error) {
+      httpLogger.logResponse(null, requestId, error, logOptions);
+      throw error;
+    }
   }
 
   // Resources

@@ -4,35 +4,36 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { useCallTool, useReadResource, useTools, type Tool } from '@/hooks/useApi'
+import { useCallTool, useClearPersona, useDeletePersonaEmail, usePersonaEmails, useReadResource, useTokenExchange, useTools, type Tool } from '@/hooks/useApi'
 import { cn, copyToClipboard, parseMcpResult, type ParsedMcpResult } from '@/lib/utils'
 import { useServersStore } from '@/stores/serversStore'
 import {
-    AlertCircle,
-    ChevronDown,
-    ChevronRight,
-    Code,
-    Copy,
-    Expand,
-    FormInput,
-    GripHorizontal,
-    Layout,
-    Loader2,
-    Play,
-    RefreshCw,
-    Search,
-    Wrench,
-    X,
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  Code,
+  Copy,
+  Expand,
+  FormInput,
+  GripHorizontal,
+  Layout,
+  Loader2,
+  Play,
+  RefreshCw,
+  Search,
+  UserRound,
+  Wrench,
+  X,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 
 function getToolUiResourceUri(tool: Tool): string | undefined {
@@ -151,6 +152,42 @@ function storeCachedToolResult(serverId: string, toolName: string, result: Parse
   }
 }
 
+const FIELD_VALUES_CACHE_KEY = 'mcp-field-values'
+const MAX_FIELD_SUGGESTIONS = 10
+
+function getFieldSuggestions(toolName: string, fieldKey: string): string[] {
+  try {
+    const stored = localStorage.getItem(FIELD_VALUES_CACHE_KEY)
+    if (stored) {
+      const data = JSON.parse(stored)
+      return data[toolName]?.[fieldKey] || []
+    }
+  } catch {
+    // Ignore
+  }
+  return []
+}
+
+function saveFieldValues(toolName: string, values: Record<string, string>): void {
+  try {
+    const stored = localStorage.getItem(FIELD_VALUES_CACHE_KEY)
+    const data = stored ? JSON.parse(stored) : {}
+    if (!data[toolName]) {
+      data[toolName] = {}
+    }
+    for (const [key, val] of Object.entries(values)) {
+      if (!val || !val.trim()) continue
+      const existing: string[] = data[toolName][key] || []
+      const filtered = existing.filter((v: string) => v !== val)
+      filtered.unshift(val)
+      data[toolName][key] = filtered.slice(0, MAX_FIELD_SUGGESTIONS)
+    }
+    localStorage.setItem(FIELD_VALUES_CACHE_KEY, JSON.stringify(data))
+  } catch {
+    // Ignore
+  }
+}
+
 export function ToolsTab() {
   const { activeServerId, servers } = useServersStore()
   const activeServer = servers.find((s) => s.id === activeServerId)
@@ -159,6 +196,17 @@ export function ToolsTab() {
   const { data: tools, isLoading, refetch, error } = useTools(activeServerId || '')
   const callToolMutation = useCallTool()
   const readResourceMutation = useReadResource()
+  const tokenExchangeMutation = useTokenExchange()
+  const clearPersonaMutation = useClearPersona()
+  const deletePersonaEmailMutation = useDeletePersonaEmail()
+  const { data: cachedEmails } = usePersonaEmails(activeServerId || undefined)
+  const { setPersona, clearPersona } = useServersStore()
+
+  const [personaEmail, setPersonaEmail] = useState('')
+  const [showPersonaDropdown, setShowPersonaDropdown] = useState(false)
+  const personaDropdownRef = useRef<HTMLDivElement>(null)
+  const [activeFieldSuggestion, setActiveFieldSuggestion] = useState<string | null>(null)
+  const fieldSuggestionRef = useRef<HTMLDivElement>(null)
 
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null)
   const [toolArgs, setToolArgs] = useState<string>('{}')
@@ -290,6 +338,57 @@ export function ToolsTab() {
     }
   }, [activeServerId, readResourceMutation])
 
+  const handleTokenExchange = useCallback(async () => {
+    if (!activeServerId || !personaEmail.trim()) return
+    try {
+      const result = await tokenExchangeMutation.mutateAsync({
+        serverId: activeServerId,
+        targetUserEmail: personaEmail.trim(),
+      })
+      setPersona(activeServerId, {
+        email: result.target_email,
+        expiresAt: Date.now() + result.expires_in * 1000,
+        actorSub: result.actor_sub,
+        actorEmail: result.actor_email,
+      })
+      setShowPersonaDropdown(false)
+    } catch {
+      // Error is handled by mutation state
+    }
+  }, [activeServerId, personaEmail, tokenExchangeMutation, setPersona])
+
+  const handleClearPersona = useCallback(async () => {
+    if (!activeServerId) return
+    clearPersona(activeServerId)
+    setPersonaEmail('')
+    try {
+      await clearPersonaMutation.mutateAsync(activeServerId)
+    } catch {
+      // best-effort
+    }
+  }, [activeServerId, clearPersona, clearPersonaMutation])
+
+  // Close dropdowns on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (personaDropdownRef.current && !personaDropdownRef.current.contains(e.target as Node)) {
+        setShowPersonaDropdown(false)
+      }
+      if (fieldSuggestionRef.current && !fieldSuggestionRef.current.contains(e.target as Node)) {
+        setActiveFieldSuggestion(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const filteredCachedEmails = useMemo(() => {
+    if (!cachedEmails) return []
+    if (!personaEmail.trim()) return cachedEmails
+    const q = personaEmail.toLowerCase()
+    return cachedEmails.filter(e => e.email.toLowerCase().includes(q))
+  }, [cachedEmails, personaEmail])
+
   const handleExecuteTool = useCallback(async () => {
     if (!selectedTool || !activeServerId) return
 
@@ -297,15 +396,18 @@ export function ToolsTab() {
 
     try {
       const args = inputMode === 'json' ? JSON.parse(toolArgs) : formValues
+      const persona = activeServer?.activePersona
       const result = await callToolMutation.mutateAsync({
         serverId: activeServerId,
         name: selectedTool.name,
         arguments: Object.keys(args).length > 0 ? args : undefined,
+        personaEmail: persona?.email,
       })
       setToolResult(result)
       const parsed = parseMcpResult(result)
       setParsedResult(parsed)
       storeCachedToolResult(activeServerId, selectedTool.name, parsed)
+      saveFieldValues(selectedTool.name, inputMode === 'form' ? formValues : {})
 
       if (resourceUri) {
         setResultViewMode('ui')
@@ -336,16 +438,18 @@ export function ToolsTab() {
         })
       }
     }
-  }, [selectedTool, activeServerId, inputMode, toolArgs, formValues, callToolMutation, fetchAppHtml])
+  }, [selectedTool, activeServerId, activeServer?.activePersona, inputMode, toolArgs, formValues, callToolMutation, fetchAppHtml])
 
   const handleCallToolFromApp = useCallback(async (name: string, args?: Record<string, unknown>) => {
     if (!activeServerId) throw new Error('No server connected')
+    const persona = activeServer?.activePersona
     return await callToolMutation.mutateAsync({
       serverId: activeServerId,
       name,
       arguments: args,
+      personaEmail: persona?.email,
     })
-  }, [activeServerId, callToolMutation])
+  }, [activeServerId, activeServer?.activePersona, callToolMutation])
 
   const handleReadResourceFromApp = useCallback(async (uri: string) => {
     if (!activeServerId) throw new Error('No server connected')
@@ -435,9 +539,124 @@ export function ToolsTab() {
     )
   }
 
+  const showPersonaBar = activeServer?.config.oauth?.enabled && isConnected &&
+    (activeServer.config.type === 'streamable-http' || activeServer.config.type === 'sse')
+
   return (
-    <div className="h-full p-4">
-      <PanelGroup direction="horizontal" className="h-full">
+    <div className="h-full p-4 flex flex-col gap-3">
+      {/* Global Persona Bar */}
+      {showPersonaBar && (
+        <div className="flex-shrink-0 rounded-lg border bg-muted/30 px-4 py-2.5">
+          {activeServer.activePersona ? (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="flex items-center justify-center h-7 w-7 rounded-full bg-primary/10">
+                  <UserRound className="h-4 w-4 text-primary" />
+                </div>
+                {activeServer.activePersona.actorEmail && (
+                  <Badge variant="outline" className="text-sm px-3 py-0.5 font-normal bg-white text-black border-white/80">
+                    {activeServer.activePersona.actorEmail}
+                  </Badge>
+                )}
+                <span className="text-sm text-muted-foreground">impersonating</span>
+                <Badge className="text-sm px-3 py-0.5 font-normal bg-emerald-600 hover:bg-emerald-600 text-white border-emerald-600">
+                  {activeServer.activePersona.email}
+                </Badge>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs px-3"
+                onClick={handleClearPersona}
+              >
+                <X className="h-3 w-3 mr-1" />
+                Clear Persona
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3" ref={personaDropdownRef}>
+              <div className="flex items-center justify-center h-7 w-7 rounded-full bg-muted flex-shrink-0">
+                <UserRound className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <span className="text-sm text-muted-foreground flex-shrink-0">Impersonate</span>
+              <div className="relative flex-1 max-w-md">
+                <Input
+                  placeholder="Enter target user email..."
+                  value={personaEmail}
+                  autoComplete="off"
+                  data-bwignore="true"
+                  data-lpignore="true"
+                  data-1p-ignore="true"
+                  onChange={(e) => {
+                    setPersonaEmail(e.target.value)
+                    setShowPersonaDropdown(true)
+                  }}
+                  onFocus={() => setShowPersonaDropdown(true)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && personaEmail.trim()) {
+                      e.preventDefault()
+                      handleTokenExchange()
+                    }
+                    if (e.key === 'Escape') {
+                      setShowPersonaDropdown(false)
+                    }
+                  }}
+                  className="h-8 text-sm"
+                />
+                {showPersonaDropdown && filteredCachedEmails.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-popover border border-border rounded-md shadow-lg max-h-48 overflow-auto">
+                    {filteredCachedEmails.map((entry) => (
+                      <div
+                        key={entry.email}
+                        className="flex items-center justify-between px-3 py-2 hover:bg-muted cursor-pointer group"
+                      >
+                        <button
+                          className="flex-1 text-left text-sm truncate"
+                          onClick={() => {
+                            setPersonaEmail(entry.email)
+                            setShowPersonaDropdown(false)
+                          }}
+                        >
+                          {entry.email}
+                        </button>
+                        <button
+                          className="ml-2 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            deletePersonaEmailMutation.mutate(entry.email)
+                          }}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <Button
+                size="sm"
+                className="h-8 text-sm px-4"
+                disabled={!personaEmail.trim() || tokenExchangeMutation.isPending}
+                onClick={handleTokenExchange}
+              >
+                {tokenExchangeMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                ) : (
+                  <UserRound className="h-3.5 w-3.5 mr-1.5" />
+                )}
+                Exchange Token
+              </Button>
+            </div>
+          )}
+          {tokenExchangeMutation.isError && (
+            <p className="text-xs text-destructive mt-1.5 ml-10">
+              {tokenExchangeMutation.error?.message || 'Token exchange failed'}
+            </p>
+          )}
+        </div>
+      )}
+
+      <PanelGroup direction="horizontal" className="flex-1 min-h-0">
         {/* Tools List Panel */}
         <Panel defaultSize={25} minSize={15} maxSize={40}>
           <Card className="h-full flex flex-col">
@@ -659,6 +878,7 @@ export function ToolsTab() {
                         {selectedTool.description}
                       </p>
                     )}
+
                   </CardHeader>
                   <CardContent className="flex-1 overflow-hidden min-h-0">
                     {selectedTool ? (
@@ -717,13 +937,48 @@ export function ToolsTab() {
                                         </button>
                                       </div>
                                     ) : (
-                                      <Input
-                                        value={formValues[key] || ''}
-                                        onChange={(e) =>
-                                          updateFormValue(key, e.target.value)
-                                        }
-                                        placeholder={`Enter ${key}`}
-                                      />
+                                      <div className="relative" ref={activeFieldSuggestion === key ? fieldSuggestionRef : undefined}>
+                                        <Input
+                                          value={formValues[key] || ''}
+                                          onChange={(e) => {
+                                            updateFormValue(key, e.target.value)
+                                            setActiveFieldSuggestion(key)
+                                          }}
+                                          onFocus={() => setActiveFieldSuggestion(key)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Escape') setActiveFieldSuggestion(null)
+                                          }}
+                                          placeholder={`Enter ${key}`}
+                                          autoComplete="off"
+                                          data-bwignore="true"
+                                          data-lpignore="true"
+                                          data-1p-ignore="true"
+                                        />
+                                        {activeFieldSuggestion === key && selectedTool && (() => {
+                                          const suggestions = getFieldSuggestions(selectedTool.name, key)
+                                          const currentVal = (formValues[key] || '').toLowerCase()
+                                          const filtered = suggestions.filter(s =>
+                                            s.toLowerCase().includes(currentVal) && s !== formValues[key]
+                                          )
+                                          if (filtered.length === 0) return null
+                                          return (
+                                            <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-popover border border-border rounded-md shadow-lg max-h-40 overflow-auto">
+                                              {filtered.map((suggestion, i) => (
+                                                <button
+                                                  key={i}
+                                                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted cursor-pointer truncate"
+                                                  onClick={() => {
+                                                    updateFormValue(key, suggestion)
+                                                    setActiveFieldSuggestion(null)
+                                                  }}
+                                                >
+                                                  {suggestion}
+                                                </button>
+                                              ))}
+                                            </div>
+                                          )
+                                        })()}
+                                      </div>
                                     )}
                                   </div>
                                 )

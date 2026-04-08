@@ -36,6 +36,9 @@ const CONNECTION_STEP_MAP: Record<string, { label: string; status: ConnectionSte
   'oauth:revoke_complete': { label: 'OAuth token revoked', status: 'done' },
   'oauth:revoke_failed': { label: 'OAuth revocation failed', status: 'error' },
   'oauth:cleared': { label: 'OAuth state cleared', status: 'done' },
+  'token_exchange:start': { label: 'Exchanging token for persona', status: 'active' },
+  'token_exchange:success': { label: 'Persona token received', status: 'done' },
+  'token_exchange:failed': { label: 'Token exchange failed', status: 'error' },
 }
 
 export function useWebSocket() {

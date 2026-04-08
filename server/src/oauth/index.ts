@@ -23,7 +23,7 @@ export {
 
 // Token Management
 export {
-    canRefresh, clearAllTokens, exchangeCodeForTokens, getTokens, getTokenStatus, getValidAccessToken, hasValidTokens, initializeTokenManager, needsRefresh, refreshTokens, removeTokens, revokeTokens, storeTokens
+    canRefresh, clearAllTokens, clearPersonaTokens, exchangeCodeForTokens, getPersonaToken, getTokenIssuer, getTokens, getTokenStatus, getValidAccessToken, hasValidTokens, initializeTokenManager, needsRefresh, performTokenExchange, refreshTokens, removeTokens, revokeTokens, storePersonaToken, storeTokens
 } from './tokenManager.js';
 
 // Auth Flow Orchestration

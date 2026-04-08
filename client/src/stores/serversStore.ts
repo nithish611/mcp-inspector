@@ -54,6 +54,13 @@ export interface ConnectionStep {
   detail?: string
 }
 
+export interface ActivePersona {
+  email: string
+  expiresAt: number
+  actorSub: string
+  actorEmail: string
+}
+
 export interface Server {
   id: string
   name: string
@@ -63,6 +70,7 @@ export interface Server {
   isAuthorizing: boolean
   createdAt: number
   connectionSteps: ConnectionStep[]
+  activePersona?: ActivePersona
 }
 
 interface ServersState {
@@ -82,6 +90,8 @@ interface ServersState {
   getServer: (id: string) => Server | undefined
   getActiveServer: () => Server | undefined
   getConnectedServers: () => Server[]
+  setPersona: (serverId: string, persona: ActivePersona) => void
+  clearPersona: (serverId: string) => void
   clearServerError: (id: string) => void
   addConnectionStep: (serverId: string, step: ConnectionStep) => void
   updateConnectionStep: (serverId: string, stepId: string, updates: Partial<ConnectionStep>) => void
@@ -269,6 +279,22 @@ export const useServersStore = create<ServersState>()(
         }))
       },
 
+      setPersona: (serverId, persona) => {
+        set((state) => ({
+          servers: state.servers.map((s) =>
+            s.id === serverId ? { ...s, activePersona: persona } : s
+          ),
+        }))
+      },
+
+      clearPersona: (serverId) => {
+        set((state) => ({
+          servers: state.servers.map((s) =>
+            s.id === serverId ? { ...s, activePersona: undefined } : s
+          ),
+        }))
+      },
+
       clearServerError: (id) => {
         set((state) => ({
           servers: state.servers.map((s) =>
@@ -296,6 +322,7 @@ export const useServersStore = create<ServersState>()(
           isConnecting: false,
           isAuthorizing: false,
           connectionSteps: [],
+          activePersona: undefined,
         })),
         activeServerId: state.activeServerId,
       }),

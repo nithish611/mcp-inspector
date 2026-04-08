@@ -4,7 +4,7 @@
  */
 
 import crypto from 'crypto';
-import type { AuthServerMetadata, OAuthTokens } from '../types.js';
+import type { AuthServerMetadata, OAuthTokens, PersonaToken } from '../types.js';
 
 // In-memory storage for tokens (keyed by resourceUri)
 const tokenStore = new Map<string, EncryptedTokens>();
@@ -501,4 +501,121 @@ export function getTokenStatus(resourceUri: string): {
     expiresAt: tokens.expiresAt,
     scope: tokens.scope,
   };
+}
+
+// ============================================================================
+// Persona Token Exchange (RFC 8693)
+// ============================================================================
+
+const GRANT_TYPE_TOKEN_EXCHANGE = 'urn:ietf:params:oauth:grant-type:token-exchange';
+const TOKEN_TYPE_ACCESS = 'urn:ietf:params:oauth:token-type:access_token';
+
+const personaTokenStore = new Map<string, PersonaToken>();
+
+function personaKey(serverId: string, email: string): string {
+  return `${serverId}:${email.toLowerCase()}`;
+}
+
+interface TokenExchangeRawResponse {
+  access_token: string;
+  issued_token_type: string;
+  token_type: string;
+  expires_in: number;
+  scope?: string;
+  error?: string;
+  error_description?: string;
+}
+
+export async function performTokenExchange(
+  metadata: AuthServerMetadata,
+  subjectToken: string,
+  targetUserEmail: string,
+  clientId: string,
+  clientSecret?: string,
+  scope?: string,
+): Promise<{ accessToken: string; expiresIn: number; scope?: string }> {
+  console.log(`[TokenManager] Performing token exchange for ${targetUserEmail} at ${metadata.token_endpoint}`);
+
+  const params = new URLSearchParams({
+    grant_type: GRANT_TYPE_TOKEN_EXCHANGE,
+    subject_token: subjectToken,
+    subject_token_type: TOKEN_TYPE_ACCESS,
+    target_user_email: targetUserEmail,
+  });
+
+  if (scope) {
+    params.set('scope', scope);
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Accept': 'application/json',
+  };
+
+  if (clientSecret) {
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    headers['Authorization'] = `Basic ${credentials}`;
+  } else {
+    params.set('client_id', clientId);
+  }
+
+  const response = await fetch(metadata.token_endpoint, {
+    method: 'POST',
+    headers,
+    body: params.toString(),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+    try {
+      const errorJson = JSON.parse(errorBody);
+      errorMessage = errorJson.error_description || errorJson.error || errorMessage;
+    } catch {
+      if (errorBody) errorMessage = errorBody;
+    }
+    throw new Error(`Token exchange failed: ${errorMessage}`);
+  }
+
+  const body = await response.json() as TokenExchangeRawResponse;
+
+  if (!body.access_token) {
+    throw new Error('Token exchange response missing access_token');
+  }
+
+  console.log(`[TokenManager] Token exchange successful, expires in ${body.expires_in}s`);
+
+  return {
+    accessToken: body.access_token,
+    expiresIn: body.expires_in,
+    scope: body.scope,
+  };
+}
+
+export function storePersonaToken(serverId: string, token: PersonaToken): void {
+  personaTokenStore.set(personaKey(serverId, token.targetEmail), token);
+  console.log(`[TokenManager] Stored persona token for ${token.targetEmail} on server ${serverId}`);
+}
+
+export function getPersonaToken(serverId: string, email: string): PersonaToken | null {
+  const token = personaTokenStore.get(personaKey(serverId, email));
+  if (!token) return null;
+  if (token.expiresAt <= Date.now() + 30_000) {
+    personaTokenStore.delete(personaKey(serverId, email));
+    return null;
+  }
+  return token;
+}
+
+export function clearPersonaTokens(serverId?: string): void {
+  if (serverId) {
+    for (const key of personaTokenStore.keys()) {
+      if (key.startsWith(`${serverId}:`)) {
+        personaTokenStore.delete(key);
+      }
+    }
+  } else {
+    personaTokenStore.clear();
+  }
+  console.log(`[TokenManager] Cleared persona tokens${serverId ? ` for server ${serverId}` : ''}`);
 }

@@ -131,7 +131,7 @@ export function useTools(serverId?: string) {
 
 export function useCallTool() {
   return useMutation({
-    mutationFn: async (params: { serverId: string; name: string; arguments?: Record<string, unknown> }) => {
+    mutationFn: async (params: { serverId: string; name: string; arguments?: Record<string, unknown>; personaEmail?: string }) => {
       return fetchApi<unknown>('/tools/call', {
         method: 'POST',
         body: JSON.stringify(params),
@@ -320,6 +320,77 @@ export function useOAuthClear() {
       queryClient.invalidateQueries({ queryKey: ['oauth-status'] })
       queryClient.invalidateQueries({ queryKey: ['oauth-clients'] })
       queryClient.invalidateQueries({ queryKey: ['status'] })
+    },
+  })
+}
+
+// ============================================================================
+// Token Exchange / Persona hooks
+// ============================================================================
+
+export interface TokenExchangeResponse {
+  access_token: string
+  expires_in: number
+  scope?: string
+  target_email: string
+  actor_sub: string
+  actor_email: string
+}
+
+export interface PersonaEmailEntry {
+  email: string
+  lastUsed: number
+  serverIds: string[]
+}
+
+export function useTokenExchange() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (params: { serverId: string; targetUserEmail: string; scope?: string }) => {
+      return fetchApi<TokenExchangeResponse>('/oauth/token-exchange', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      })
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['persona-emails', variables.serverId] })
+    },
+  })
+}
+
+export function usePersonaEmails(serverId?: string) {
+  return useQuery({
+    queryKey: ['persona-emails', serverId],
+    queryFn: async () => {
+      const params = serverId ? `?serverId=${encodeURIComponent(serverId)}` : ''
+      const data = await fetchApi<{ emails: PersonaEmailEntry[] }>(`/personas${params}`)
+      return data.emails
+    },
+  })
+}
+
+export function useDeletePersonaEmail() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (email: string) => {
+      return fetchApi<{ success: boolean }>(`/personas/${encodeURIComponent(email)}`, {
+        method: 'DELETE',
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['persona-emails'] })
+    },
+  })
+}
+
+export function useClearPersona() {
+  return useMutation({
+    mutationFn: async (serverId: string) => {
+      return fetchApi<{ success: boolean }>(`/oauth/persona?serverId=${encodeURIComponent(serverId)}`, {
+        method: 'DELETE',
+      })
     },
   })
 }

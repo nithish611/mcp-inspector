@@ -99,6 +99,34 @@ export interface Prompt {
 export interface ToolCallRequest {
   name: string;
   arguments?: Record<string, unknown>;
+  personaEmail?: string;
+}
+
+// ============================================================================
+// Token Exchange / Persona Types (RFC 8693)
+// ============================================================================
+
+export interface TokenExchangeRequest {
+  serverId: string;
+  targetUserEmail: string;
+  scope?: string;
+}
+
+export interface TokenExchangeResponse {
+  access_token: string;
+  issued_token_type: string;
+  token_type: string;
+  expires_in: number;
+  scope?: string;
+  target_email: string;
+  actor_sub: string;
+}
+
+export interface PersonaToken {
+  accessToken: string;
+  expiresAt: number;
+  targetEmail: string;
+  actorSub: string;
 }
 
 export interface ResourceReadRequest {

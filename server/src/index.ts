@@ -8,17 +8,25 @@ import connectionManager from './connectionManager.js';
 import httpLogger from './httpLogger.js';
 import {
     clearAllTokens,
+    clearPersonaTokens,
     clearRegisteredClients,
+    discoverAuthServerMetadata,
     getAccessToken,
     getAllRegisteredClients,
     getCanonicalResourceUri,
     getOAuthStatus,
+    getRegisteredClient,
+    getTokenIssuer,
+    getTokens,
     getTokenStatus,
     handleAuthCallback,
     initializeOAuth,
     initiateAuthFlow,
+    performTokenExchange,
     revokeAuthorization,
+    storePersonaToken,
 } from './oauth/index.js';
+import { getPersonaEmails, removePersonaEmail, savePersonaEmail } from './personaCache.js';
 import type {
     OAuthConfig,
     PromptGetRequest,
@@ -112,7 +120,7 @@ app.get('/api/tools', async (req: Request, res: Response) => {
 
 app.post('/api/tools/call', async (req: Request, res: Response) => {
   try {
-    const { serverId, ...request } = req.body as ToolCallRequest & { serverId?: string };
+    const { serverId, personaEmail, ...request } = req.body as ToolCallRequest & { serverId?: string };
     
     if (!request.name) {
       res.status(400).json({ error: 'Tool name is required' });
@@ -120,7 +128,11 @@ app.post('/api/tools/call', async (req: Request, res: Response) => {
     }
 
     const id = serverId || 'default';
-    const result = await connectionManager.callTool(id, request);
+    const toolRequest: ToolCallRequest = { ...request };
+    if (personaEmail) {
+      toolRequest.personaEmail = personaEmail;
+    }
+    const result = await connectionManager.callTool(id, toolRequest);
     res.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Tool call failed';
@@ -484,6 +496,160 @@ app.delete('/api/oauth/clear', (_req: Request, res: Response) => {
   clearRegisteredClients();
   httpLogger.logNotification('oauth:cleared', {});
   res.json({ success: true });
+});
+
+// ============================================================================
+// Token Exchange / Persona Endpoints
+// ============================================================================
+
+/**
+ * Exchange the actor's access token for a persona (impersonated) token
+ * POST /api/oauth/token-exchange
+ * Body: { serverId, targetUserEmail, scope? }
+ */
+app.post('/api/oauth/token-exchange', async (req: Request, res: Response) => {
+  try {
+    const { serverId, targetUserEmail, scope } = req.body;
+
+    if (!serverId || !targetUserEmail) {
+      res.status(400).json({ error: 'serverId and targetUserEmail are required' });
+      return;
+    }
+
+    const config = connectionManager.getConfig(serverId);
+    if (!config?.url) {
+      res.status(400).json({ error: 'Server not found or has no URL' });
+      return;
+    }
+
+    const resourceUri = getCanonicalResourceUri(config.url);
+
+    httpLogger.logNotification('token_exchange:start', { serverId, targetUserEmail });
+
+    const tokens = getTokens(resourceUri);
+    if (!tokens?.accessToken) {
+      res.status(401).json({ error: 'No access token available. Please authorize first.' });
+      return;
+    }
+
+    const issuer = getTokenIssuer(resourceUri);
+    if (!issuer) {
+      res.status(400).json({ error: 'Could not determine token issuer' });
+      return;
+    }
+
+    const metadata = await discoverAuthServerMetadata(issuer);
+
+    const oauthConfig: OAuthConfig = {
+      enabled: true,
+      clientId: config.oauth?.clientId,
+      clientSecret: config.oauth?.clientSecret,
+      redirectUri: config.oauth?.redirectUri || DEFAULT_REDIRECT_URI,
+    };
+
+    let clientId = oauthConfig.clientId || '';
+    let clientSecret = oauthConfig.clientSecret;
+
+    if (!clientId) {
+      const registered = getRegisteredClient(issuer, resourceUri, oauthConfig.redirectUri);
+      if (registered) {
+        clientId = registered.clientId;
+        clientSecret = registered.clientSecret;
+      }
+    }
+
+    if (!clientId) {
+      res.status(400).json({ error: 'No client credentials available. DCR client may have expired.' });
+      return;
+    }
+
+    const effectiveScope = scope || tokens.scope;
+    const result = await performTokenExchange(
+      metadata,
+      tokens.accessToken,
+      targetUserEmail,
+      clientId,
+      clientSecret,
+      effectiveScope,
+    );
+
+    const personaToken = {
+      accessToken: result.accessToken,
+      expiresAt: Date.now() + result.expiresIn * 1000,
+      targetEmail: targetUserEmail,
+      actorSub: '',
+    };
+
+    let actorEmail = '';
+    try {
+      const decoded = JSON.parse(atob(result.accessToken.split('.')[1]));
+      personaToken.actorSub = decoded.act?.sub || decoded.sub || '';
+    } catch {
+      // JWT decode is best-effort
+    }
+
+    // Extract actor email from the original (subject) token
+    try {
+      const actorDecoded = JSON.parse(atob(tokens.accessToken.split('.')[1]));
+      actorEmail = actorDecoded.email || actorDecoded.preferred_username || '';
+    } catch {
+      // best-effort
+    }
+
+    storePersonaToken(serverId, personaToken);
+    savePersonaEmail(targetUserEmail, serverId);
+
+    httpLogger.logNotification('token_exchange:success', {
+      serverId,
+      targetUserEmail,
+      expiresIn: result.expiresIn,
+    });
+
+    res.json({
+      access_token: result.accessToken,
+      expires_in: result.expiresIn,
+      scope: result.scope,
+      target_email: targetUserEmail,
+      actor_sub: personaToken.actorSub,
+      actor_email: actorEmail,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Token exchange failed';
+    httpLogger.logError('token_exchange:failed', { error: message });
+    res.status(500).json({ error: message });
+  }
+});
+
+/**
+ * Clear persona token for a server
+ * DELETE /api/oauth/persona?serverId=...
+ */
+app.delete('/api/oauth/persona', (req: Request, res: Response) => {
+  const serverId = req.query.serverId as string;
+  if (serverId) {
+    clearPersonaTokens(serverId);
+  }
+  res.json({ success: true });
+});
+
+/**
+ * Get cached persona emails
+ * GET /api/personas?serverId=...
+ */
+app.get('/api/personas', (_req: Request, res: Response) => {
+  const serverId = _req.query.serverId as string | undefined;
+  const emails = getPersonaEmails(serverId);
+  res.json({ emails });
+});
+
+/**
+ * Delete a cached persona email
+ * DELETE /api/personas/:email
+ */
+app.delete('/api/personas/:email', (req: Request, res: Response) => {
+  const email = decodeURIComponent(req.params.email);
+  const deleted = removePersonaEmail(email);
+  res.json({ success: deleted });
 });
 
 // ============================================================================
