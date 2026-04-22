@@ -177,17 +177,17 @@ export function LogsTab({ onClearLogs }: LogsTabProps) {
   }
 
   const handleCopyLog = (log: LogEntry) => {
-    copyToClipboard(JSON.stringify(log, null, 2))
+    copyToClipboard(JSON.stringify(log, null, 2), 'JSON')
   }
 
   const handleCopyAsCurl = (log: LogEntry) => {
     const curlCommand = generateCurlCommand(log)
-    copyToClipboard(curlCommand)
+    copyToClipboard(curlCommand, 'cURL')
   }
 
   const handleCopyAsCode = (log: LogEntry, language: 'javascript' | 'python') => {
     const code = generateCodeSnippet(log, language)
-    copyToClipboard(code)
+    copyToClipboard(code, language === 'javascript' ? 'JS' : 'Python')
   }
 
   const getDirectionIcon = (direction: LogEntry['direction']) => {
@@ -835,7 +835,7 @@ function JsonBlock({
   const contentHeight = Math.max(lineCount * 18 + 20, 150)
 
   const handleCopy = () => {
-    copyToClipboard(jsonString)
+    copyToClipboard(jsonString, 'JSON')
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }

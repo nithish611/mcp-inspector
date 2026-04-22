@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import { toast } from './toast'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -33,8 +34,10 @@ export function truncateString(str: string, maxLength: number): string {
   return str.substring(0, maxLength - 3) + '...'
 }
 
-export function copyToClipboard(text: string): Promise<void> {
-  return navigator.clipboard.writeText(text)
+export function copyToClipboard(text: string, label?: string): Promise<void> {
+  return navigator.clipboard.writeText(text).then(() => {
+    toast(label ? `${label} copied!` : 'Copied to clipboard!')
+  })
 }
 
 export function downloadAsFile(content: string, filename: string, mimeType: string = 'application/json'): void {

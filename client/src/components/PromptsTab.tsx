@@ -89,7 +89,7 @@ export function PromptsTab() {
       const textToCopy = promptResult.isJson 
         ? JSON.stringify(promptResult.data, null, 2)
         : promptResult.rawText
-      copyToClipboard(textToCopy)
+      copyToClipboard(textToCopy, 'Result')
     }
   }
 

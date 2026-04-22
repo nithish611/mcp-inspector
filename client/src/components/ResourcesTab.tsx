@@ -60,7 +60,7 @@ export function ResourcesTab() {
       const textToCopy = resourceContent.isJson 
         ? JSON.stringify(resourceContent.data, null, 2)
         : resourceContent.rawText
-      copyToClipboard(textToCopy)
+      copyToClipboard(textToCopy, 'Content')
     }
   }
 

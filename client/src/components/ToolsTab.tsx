@@ -4,10 +4,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,22 +16,22 @@ import { useCallTool, useClearPersona, useDeletePersonaEmail, usePersonaEmails, 
 import { cn, copyToClipboard, parseMcpResult, type ParsedMcpResult } from '@/lib/utils'
 import { useServersStore } from '@/stores/serversStore'
 import {
-  AlertCircle,
-  ChevronDown,
-  ChevronRight,
-  Code,
-  Copy,
-  Expand,
-  FormInput,
-  GripHorizontal,
-  Layout,
-  Loader2,
-  Play,
-  RefreshCw,
-  Search,
-  UserRound,
-  Wrench,
-  X,
+    AlertCircle,
+    ChevronDown,
+    ChevronRight,
+    Code,
+    Copy,
+    Expand,
+    FormInput,
+    GripHorizontal,
+    Layout,
+    Loader2,
+    Play,
+    RefreshCw,
+    Search,
+    UserRound,
+    Wrench,
+    X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
@@ -475,9 +475,9 @@ export function ToolsTab() {
 
   const handleCopyResult = () => {
     if (parsedResult) {
-      copyToClipboard(parsedResult.isJson ? JSON.stringify(parsedResult.data, null, 2) : parsedResult.rawText)
+      copyToClipboard(parsedResult.isJson ? JSON.stringify(parsedResult.data, null, 2) : parsedResult.rawText, 'Result')
     } else if (toolResult) {
-      copyToClipboard(JSON.stringify(toolResult, null, 2))
+      copyToClipboard(JSON.stringify(toolResult, null, 2), 'Result')
     }
   }
 
@@ -543,10 +543,10 @@ export function ToolsTab() {
     (activeServer.config.type === 'streamable-http' || activeServer.config.type === 'sse')
 
   return (
-    <div className="h-full p-4 flex flex-col gap-3">
+    <div className="h-full p-3 flex flex-col gap-2">
       {/* Global Persona Bar */}
       {showPersonaBar && (
-        <div className="flex-shrink-0 rounded-lg border bg-muted/30 px-4 py-2.5">
+        <div className="flex-shrink-0 rounded-md border bg-muted/30 px-3 py-2">
           {activeServer.activePersona ? (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -574,12 +574,12 @@ export function ToolsTab() {
               </Button>
             </div>
           ) : (
-            <div className="flex items-center gap-3" ref={personaDropdownRef}>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-2" ref={personaDropdownRef}>
               <div className="flex items-center justify-center h-7 w-7 rounded-full bg-muted flex-shrink-0">
                 <UserRound className="h-4 w-4 text-muted-foreground" />
               </div>
               <span className="text-sm text-muted-foreground flex-shrink-0">Impersonate</span>
-              <div className="relative flex-1 max-w-md">
+              <div className="relative w-72 min-w-[12rem] max-w-full shrink-0">
                 <Input
                   placeholder="Enter target user email..."
                   value={personaEmail}
@@ -660,9 +660,9 @@ export function ToolsTab() {
         {/* Tools List Panel */}
         <Panel defaultSize={25} minSize={15} maxSize={40}>
           <Card className="h-full flex flex-col">
-            <CardHeader className="pb-3 flex-shrink-0">
+            <CardHeader className="flex-shrink-0 space-y-1.5 p-4 pb-2">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-lg flex items-center gap-2">
+                <CardTitle className="text-base flex items-center gap-2">
                   <Wrench className="h-5 w-5" />
                   Tools
                   {tools && (
@@ -704,7 +704,7 @@ export function ToolsTab() {
               )}
             </CardHeader>
             <CardContent className="flex-1 overflow-hidden p-0">
-              <ScrollArea className="h-full px-6 pb-6">
+              <ScrollArea className="h-full px-3 pb-3">
                 {isLoading ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -730,7 +730,7 @@ export function ToolsTab() {
                       <div
                         key={tool.name}
                         className={cn(
-                          'p-3 rounded-lg border cursor-pointer transition-colors',
+                          'p-2.5 rounded-md border cursor-pointer transition-colors',
                           selectedTool?.name === tool.name
                             ? 'border-primary bg-primary/5'
                             : 'border-border hover:border-primary/50 hover:bg-muted/50'
@@ -807,8 +807,8 @@ export function ToolsTab() {
         </Panel>
 
         {/* Horizontal Resize Handle */}
-        <PanelResizeHandle className="w-2 mx-1 flex items-center justify-center group">
-          <div className="w-1 h-8 rounded-full bg-border group-hover:bg-primary/50 transition-colors" />
+        <PanelResizeHandle className="w-1.5 mx-0.5 flex items-center justify-center group">
+          <div className="w-0.5 h-7 rounded-full bg-border group-hover:bg-primary/50 transition-colors" />
         </PanelResizeHandle>
 
         {/* Tool Execution Panel */}
@@ -818,9 +818,9 @@ export function ToolsTab() {
               {/* Arguments Editor */}
               <Panel defaultSize={50} minSize={20}>
                 <Card className="h-full flex flex-col">
-                  <CardHeader className="pb-3 flex-shrink-0">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg">
+                  <CardHeader className="flex-shrink-0 space-y-1 p-4 pb-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <CardTitle className="text-base">
                         {selectedTool ? (
                           <span className="flex items-center gap-2">
                             <span className="font-mono">{selectedTool.name}</span>
@@ -880,7 +880,7 @@ export function ToolsTab() {
                     )}
 
                   </CardHeader>
-                  <CardContent className="flex-1 overflow-hidden min-h-0">
+                  <CardContent className="flex-1 overflow-hidden min-h-0 p-4 pt-0">
                     {selectedTool ? (
                       inputMode === 'json' ? (
                         <div className="h-full">
@@ -893,7 +893,7 @@ export function ToolsTab() {
                         </div>
                       ) : (
                         <ScrollArea className="h-full">
-                          <div className="space-y-4 pr-4">
+                          <div className="space-y-3 pr-2">
                             {Object.entries(selectedTool.inputSchema.properties || {}).map(
                               ([key, value]) => {
                                 const prop = value as {
@@ -1005,9 +1005,9 @@ export function ToolsTab() {
               {/* Results Panel */}
               <Panel defaultSize={50} minSize={20}>
                 <Card className="h-full flex flex-col">
-                  <CardHeader className="pb-3 flex-shrink-0">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg flex items-center gap-2">
+                  <CardHeader className="flex-shrink-0 p-4 pb-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <CardTitle className="text-base flex items-center gap-2">
                         Result
                         {(callToolMutation.isPending || isLoadingAppHtml) && (
                           <Loader2 className="h-4 w-4 animate-spin" />
@@ -1061,7 +1061,7 @@ export function ToolsTab() {
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent className="flex-1 overflow-hidden min-h-0">
+                  <CardContent className="flex-1 overflow-hidden min-h-0 p-4 pt-0">
                     {resultViewMode === 'ui' && appHtml ? (
                       <div className="h-full">
                         <McpAppViewer

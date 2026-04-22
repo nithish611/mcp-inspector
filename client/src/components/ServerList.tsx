@@ -5,15 +5,21 @@ import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import type { Server, ServerConfig } from '@/stores/serversStore'
 import { useServersStore } from '@/stores/serversStore'
-import { Plus, Search, Server as ServerIcon, X } from 'lucide-react'
+import { ChevronLeft, Plus, Search, Server as ServerIcon, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 interface ServerListProps {
   onConnect: (serverId: string) => void
   onDisconnect: (serverId: string) => void
+  /** Collapses the servers column so tools/results use full width */
+  onCollapseSidebar?: () => void
 }
 
-export function ServerList({ onConnect, onDisconnect }: ServerListProps) {
+export function ServerList({
+  onConnect,
+  onDisconnect,
+  onCollapseSidebar,
+}: ServerListProps) {
   const {
     servers,
     activeServerId,
@@ -71,7 +77,7 @@ export function ServerList({ onConnect, onDisconnect }: ServerListProps) {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b">
+      <div className="flex items-center justify-between px-3 py-2 border-b">
         <div className="flex items-center gap-2">
           <ServerIcon className="h-5 w-5 text-muted-foreground" />
           <h2 className="font-semibold">Servers</h2>
@@ -79,15 +85,30 @@ export function ServerList({ onConnect, onDisconnect }: ServerListProps) {
             {filteredServers.length}{searchQuery && `/${servers.length}`}
           </span>
         </div>
-        <Button size="sm" onClick={handleAddServer}>
-          <Plus className="h-4 w-4 mr-1" />
-          Add
-        </Button>
+        <div className="flex items-center gap-1">
+          {onCollapseSidebar && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 text-muted-foreground"
+              onClick={onCollapseSidebar}
+              title="Collapse server list"
+              aria-label="Collapse server list"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+          )}
+          <Button size="sm" onClick={handleAddServer}>
+            <Plus className="h-4 w-4 mr-1" />
+            Add
+          </Button>
+        </div>
       </div>
 
       {/* Search */}
       {servers.length > 0 && (
-        <div className="px-3 py-2 border-b">
+        <div className="px-2.5 py-1.5 border-b">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
@@ -110,7 +131,7 @@ export function ServerList({ onConnect, onDisconnect }: ServerListProps) {
 
       {/* Server List */}
       <ScrollArea className="flex-1">
-        <div className="p-3 space-y-2">
+        <div className="p-2 space-y-1.5">
           {servers.length === 0 ? (
             <div className="text-center py-8">
               <ServerIcon className="h-12 w-12 mx-auto text-muted-foreground/50 mb-3" />

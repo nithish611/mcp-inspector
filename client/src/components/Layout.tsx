@@ -9,27 +9,36 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useConnect, useConnectedServers, useDisconnect } from '@/hooks/useApi'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useWebSocket } from '@/hooks/useWebSocket'
+import { cn } from '@/lib/utils'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useLogsStore } from '@/stores/logsStore'
 import { useServersStore } from '@/stores/serversStore'
 import { useThemeStore } from '@/stores/themeStore'
 import {
-    Activity,
-    FolderOpen,
-    Github,
-    Keyboard,
-    MessageSquare,
-    Moon,
-    Server as ServerIcon,
-    Sun,
-    Wrench,
+  Activity,
+  ChevronRight,
+  FolderOpen,
+  Github,
+  Keyboard,
+  MessageSquare,
+  Moon,
+  Server as ServerIcon,
+  Sun,
+  Wrench,
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
+import {
+  type ImperativePanelHandle,
+  Panel,
+  PanelGroup,
+  PanelResizeHandle,
+} from 'react-resizable-panels'
 
 export function Layout() {
   const [activeTab, setActiveTab] = useState('tools')
   const [showShortcuts, setShowShortcuts] = useState(false)
+  const [serversPanelCollapsed, setServersPanelCollapsed] = useState(false)
+  const leftPanelRef = useRef<ImperativePanelHandle>(null)
   const autoReconnectAttempted = useRef(false)
   const { clearServerLogs } = useWebSocket()
   const { theme, toggleTheme } = useThemeStore()
@@ -303,46 +312,60 @@ export function Layout() {
   return (
     <div className="h-screen flex flex-col bg-background">
       {/* Header */}
-      <header className="h-14 border-b border-border flex items-center justify-between px-4 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-              <span className="text-white font-bold text-sm">MCP</span>
+      <header className="h-10 border-b border-border flex items-center justify-between gap-2 px-2.5 flex-shrink-0 min-h-0">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <div className="h-6 w-6 rounded-md bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+              <span className="text-white font-bold text-[10px] leading-none">MCP</span>
             </div>
-            <div>
-              <h1 className="text-lg font-semibold leading-none">MCP Client</h1>
-              <p className="text-xs text-muted-foreground">
-                Model Context Protocol Inspector
-              </p>
+            <div className="min-w-0 flex items-baseline gap-1.5">
+              <h1
+                className="text-sm font-semibold leading-none tracking-tight"
+                title="Model Context Protocol Inspector"
+              >
+                MCP Client
+              </h1>
+              <span className="text-[10px] text-muted-foreground leading-none hidden sm:inline border-l border-border pl-1.5 max-w-[14rem] truncate">
+                Inspector
+              </span>
             </div>
           </div>
-          
-          {/* Connected servers indicator */}
+
+          {/* Connected servers indicator — inline, compact */}
           {connectedServers.length > 0 && (
-            <div className="flex items-center gap-2 ml-4">
-              <Badge variant="success" className="gap-1">
-                <ServerIcon className="h-3 w-3" />
-                {connectedServers.length} connected
+            <div className="flex items-center gap-1.5 min-w-0 ml-1 border-l border-border pl-2">
+              <Badge
+                variant="success"
+                className="gap-0.5 h-5 px-1.5 py-0 text-[10px] font-medium shrink-0"
+                title={`${connectedServers.length} server(s) connected`}
+                aria-label={`${connectedServers.length} server(s) connected`}
+              >
+                <ServerIcon className="h-2.5 w-2.5" />
+                {connectedServers.length}
               </Badge>
               {activeServer?.status.connected && activeServer.status.serverInfo && (
-                <Badge variant="outline" className="text-xs">
-                  Active: {activeServer.status.serverInfo.name}
+                <Badge
+                  variant="outline"
+                  className="h-5 px-1.5 py-0 text-[10px] font-normal max-w-[min(12rem,28vw)] truncate"
+                  title={`Active: ${activeServer.status.serverInfo.name}`}
+                >
+                  {activeServer.status.serverInfo.name}
                 </Badge>
               )}
             </div>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-0.5 shrink-0">
           <div className="relative">
             <Button
               variant="ghost"
               size="icon"
               onClick={() => setShowShortcuts(!showShortcuts)}
-              className="h-9 w-9"
+              className="h-8 w-8"
               title="Keyboard shortcuts"
             >
-              <Keyboard className="h-4 w-4" />
+              <Keyboard className="h-3.5 w-3.5" />
             </Button>
             {showShortcuts && (
               <div className="absolute right-0 top-full mt-2 w-64 bg-popover border border-border rounded-lg shadow-lg p-4 z-50">
@@ -380,54 +403,83 @@ export function Layout() {
             variant="ghost"
             size="icon"
             onClick={toggleTheme}
-            className="h-9 w-9"
+            className="h-8 w-8"
             title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           >
             {theme === 'dark' ? (
-              <Sun className="h-4 w-4" />
+              <Sun className="h-3.5 w-3.5" />
             ) : (
-              <Moon className="h-4 w-4" />
+              <Moon className="h-3.5 w-3.5" />
             )}
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="h-9 w-9"
+            className="h-8 w-8"
             title="View on GitHub"
             onClick={() =>
               window.open('https://github.com/modelcontextprotocol', '_blank')
             }
           >
-            <Github className="h-4 w-4" />
+            <Github className="h-3.5 w-3.5" />
           </Button>
         </div>
       </header>
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
+        {serversPanelCollapsed && (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="absolute left-0 top-1/2 z-20 h-14 w-7 -translate-y-1/2 rounded-l-none rounded-r-md border-l-0 shadow-sm"
+            onClick={() => leftPanelRef.current?.expand()}
+            title="Show servers panel"
+            aria-label="Show servers panel"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        )}
+
         <PanelGroup direction="horizontal">
           {/* Left Sidebar - Server List */}
-          <Panel defaultSize={20} minSize={15} maxSize={30}>
+          <Panel
+            ref={leftPanelRef}
+            defaultSize={16}
+            minSize={12}
+            maxSize={28}
+            collapsible
+            collapsedSize={0}
+            onCollapse={() => setServersPanelCollapsed(true)}
+            onExpand={() => setServersPanelCollapsed(false)}
+          >
             <div className="h-full border-r border-border">
               <ServerList
                 onConnect={handleConnect}
                 onDisconnect={handleDisconnect}
+                onCollapseSidebar={() => leftPanelRef.current?.collapse()}
               />
             </div>
           </Panel>
 
-          <PanelResizeHandle className="w-1 bg-border hover:bg-primary/50 transition-colors" />
+          <PanelResizeHandle
+            className={cn(
+              'w-1 bg-border hover:bg-primary/50 transition-colors',
+              serversPanelCollapsed && 'hidden'
+            )}
+          />
 
           {/* Main Panel - Tabs */}
-          <Panel defaultSize={80}>
+          <Panel defaultSize={84} minSize={40}>
             <div className="h-full flex flex-col">
               <Tabs
                 value={activeTab}
                 onValueChange={setActiveTab}
                 className="flex-1 flex flex-col overflow-hidden"
               >
-                <div className="border-b border-border px-4">
-                  <TabsList className="h-12 bg-transparent">
+                <div className="border-b border-border px-3">
+                  <TabsList className="h-10 bg-transparent gap-0.5">
                     <TabsTrigger
                       value="tools"
                       className="data-[state=active]:bg-muted"
