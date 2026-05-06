@@ -1,17 +1,17 @@
 import { Button } from '@/components/ui/button'
 import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import type { Server, ServerConfig, TransportType } from '@/stores/serversStore'
-import { ChevronDown, ChevronUp, Globe, Radio, Shield, Terminal } from 'lucide-react'
+import { ChevronDown, ChevronUp, Globe, Shield, Terminal } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 interface ServerConfigModalProps {
@@ -28,7 +28,7 @@ export function ServerConfigModal({
   onSave,
 }: ServerConfigModalProps) {
   const [name, setName] = useState('')
-  const [transportType, setTransportType] = useState<TransportType>('stdio')
+  const [transportType, setTransportType] = useState<TransportType>('streamable-http')
   
   // STDIO fields
   const [command, setCommand] = useState('')
@@ -44,6 +44,15 @@ export function ServerConfigModal({
   const [showOAuthSettings, setShowOAuthSettings] = useState(false)
   
   const isEditing = !!server
+
+  const handleTransportTypeChange = (nextType: TransportType) => {
+    setTransportType(nextType)
+    // Default OAuth on for HTTP transport; user can still toggle it off.
+    if (nextType === 'streamable-http') {
+      setOauthEnabled(true)
+      setShowOAuthSettings(false)
+    }
+  }
 
   // Reset form when modal opens/closes or server changes
   useEffect(() => {
@@ -68,16 +77,17 @@ export function ServerConfigModal({
           : ''
       )
       setOauthEnabled(server.config.oauth?.enabled || false)
+      setShowOAuthSettings(false)
     } else if (open) {
       // Reset to defaults for new server
       setName('')
-      setTransportType('stdio')
+      setTransportType('streamable-http')
       setCommand('')
       setArgs('')
       setEnvVars('')
       setUrl('')
       setHeaders('')
-      setOauthEnabled(false)
+      setOauthEnabled(true)
       setShowOAuthSettings(false)
     }
   }, [open, server])
@@ -154,33 +164,24 @@ export function ServerConfigModal({
           {/* Transport Type */}
           <div className="space-y-2">
             <Label>Transport Type</Label>
-            <div className="grid grid-cols-3 gap-2">
-              <Button
-                type="button"
-                variant={transportType === 'stdio' ? 'default' : 'outline'}
-                className="flex items-center gap-2"
-                onClick={() => setTransportType('stdio')}
-              >
-                <Terminal className="h-4 w-4" />
-                STDIO
-              </Button>
-              <Button
-                type="button"
-                variant={transportType === 'sse' ? 'default' : 'outline'}
-                className="flex items-center gap-2"
-                onClick={() => setTransportType('sse')}
-              >
-                <Radio className="h-4 w-4" />
-                SSE
-              </Button>
+            <div className="grid grid-cols-2 gap-2">
               <Button
                 type="button"
                 variant={transportType === 'streamable-http' ? 'default' : 'outline'}
                 className="flex items-center gap-2"
-                onClick={() => setTransportType('streamable-http')}
+                onClick={() => handleTransportTypeChange('streamable-http')}
               >
                 <Globe className="h-4 w-4" />
                 HTTP
+              </Button>
+              <Button
+                type="button"
+                variant={transportType === 'stdio' ? 'default' : 'outline'}
+                className="flex items-center gap-2"
+                onClick={() => handleTransportTypeChange('stdio')}
+              >
+                <Terminal className="h-4 w-4" />
+                STDIO
               </Button>
             </div>
           </div>
@@ -221,7 +222,7 @@ export function ServerConfigModal({
             </>
           )}
 
-          {/* HTTP/SSE Configuration */}
+          {/* HTTP Configuration */}
           {transportType !== 'stdio' && (
             <>
               <div className="space-y-2">

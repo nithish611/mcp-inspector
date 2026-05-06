@@ -104,6 +104,14 @@ export function useConnectedServers() {
 export interface Tool {
   name: string
   description?: string
+  annotations?: {
+    title?: string
+    readOnlyHint?: boolean
+    destructiveHint?: boolean
+    idempotentHint?: boolean
+    openWorldHint?: boolean
+    [key: string]: unknown
+  }
   inputSchema: {
     type: string
     properties?: Record<string, unknown>
@@ -280,6 +288,31 @@ export function useOAuthRevoke() {
   return useMutation({
     mutationFn: async (params: { serverUrl: string; serverId?: string }) => {
       return fetchApi<{ success: boolean }>('/oauth/revoke', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      })
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['oauth-status', variables.serverUrl, variables.serverId] })
+      queryClient.invalidateQueries({ queryKey: ['status', variables.serverId] })
+    },
+  })
+}
+
+/**
+ * Refresh OAuth tokens for a server
+ */
+export function useOAuthRefresh() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (params: { serverUrl: string; serverId?: string }) => {
+      return fetchApi<{
+        success: boolean
+        authenticated?: boolean
+        authorizationRequired?: boolean
+        error?: string
+      }>('/oauth/refresh', {
         method: 'POST',
         body: JSON.stringify(params),
       })

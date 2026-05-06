@@ -4,10 +4,15 @@
  */
 
 import crypto from 'crypto';
+import fs from 'fs';
+import { homedir } from 'os';
+import path from 'path';
 import type { AuthServerMetadata, OAuthTokens, PersonaToken } from '../types.js';
 
 // In-memory storage for tokens (keyed by resourceUri)
 const tokenStore = new Map<string, EncryptedTokens>();
+const TOKEN_CACHE_DIR = path.join(homedir(), '.mcpinspector');
+const TOKEN_CACHE_FILE = path.join(TOKEN_CACHE_DIR, 'oauth-tokens.json');
 
 // Encryption key for tokens
 let encryptionKey: Buffer | null = null;
@@ -15,6 +20,7 @@ let encryptionKey: Buffer | null = null;
 interface EncryptedTokens {
   accessToken: string;
   refreshToken?: string;
+  refreshExpiresAt?: number;
   tokenType: string;
   expiresAt: number;
   scope?: string;
@@ -26,7 +32,61 @@ interface TokenResponse {
   token_type: string;
   expires_in?: number;
   refresh_token?: string;
+  refresh_expires_in?: number;
   scope?: string;
+}
+
+interface TokenCacheFile {
+  version: 1;
+  tokens: Record<string, EncryptedTokens>;
+}
+
+function ensureTokenCacheDir(): void {
+  if (!fs.existsSync(TOKEN_CACHE_DIR)) {
+    fs.mkdirSync(TOKEN_CACHE_DIR, { recursive: true });
+  }
+}
+
+function saveTokensToFile(): void {
+  try {
+    ensureTokenCacheDir();
+    const serialized: Record<string, EncryptedTokens> = {};
+    for (const [resourceUri, token] of tokenStore.entries()) {
+      serialized[resourceUri] = token;
+    }
+    const payload: TokenCacheFile = {
+      version: 1,
+      tokens: serialized,
+    };
+    fs.writeFileSync(TOKEN_CACHE_FILE, JSON.stringify(payload, null, 2), 'utf8');
+  } catch (error) {
+    console.error('[TokenManager] Failed to persist tokens:', error);
+  }
+}
+
+function loadTokensFromFile(): void {
+  try {
+    if (!fs.existsSync(TOKEN_CACHE_FILE)) {
+      return;
+    }
+    const raw = fs.readFileSync(TOKEN_CACHE_FILE, 'utf8');
+    const parsed = JSON.parse(raw) as TokenCacheFile;
+    if (!parsed || typeof parsed !== 'object' || !parsed.tokens) {
+      return;
+    }
+
+    let loaded = 0;
+    for (const [resourceUri, token] of Object.entries(parsed.tokens)) {
+      if (!token || typeof token !== 'object') continue;
+      tokenStore.set(resourceUri, token);
+      loaded += 1;
+    }
+    if (loaded > 0) {
+      console.log(`[TokenManager] Loaded ${loaded} token set(s) from ${TOKEN_CACHE_FILE}`);
+    }
+  } catch (error) {
+    console.error('[TokenManager] Failed to load persisted tokens:', error);
+  }
 }
 
 /**
@@ -40,6 +100,7 @@ export function initializeTokenManager(key?: string): void {
     console.warn('[TokenManager] No encryption key provided - tokens will be stored in plain text');
     encryptionKey = null;
   }
+  loadTokensFromFile();
 }
 
 /**
@@ -94,6 +155,7 @@ export function storeTokens(resourceUri: string, tokens: OAuthTokens, issuer: st
   const encrypted: EncryptedTokens = {
     accessToken: encrypt(tokens.accessToken),
     refreshToken: tokens.refreshToken ? encrypt(tokens.refreshToken) : undefined,
+    refreshExpiresAt: tokens.refreshExpiresAt,
     tokenType: tokens.tokenType,
     expiresAt: tokens.expiresAt,
     scope: tokens.scope,
@@ -101,6 +163,7 @@ export function storeTokens(resourceUri: string, tokens: OAuthTokens, issuer: st
   };
 
   tokenStore.set(resourceUri, encrypted);
+  saveTokensToFile();
   console.log(`[TokenManager] Stored tokens for ${resourceUri}`);
 }
 
@@ -116,6 +179,7 @@ export function getTokens(resourceUri: string): OAuthTokens | null {
   return {
     accessToken: decrypt(encrypted.accessToken),
     refreshToken: encrypted.refreshToken ? decrypt(encrypted.refreshToken) : undefined,
+    refreshExpiresAt: encrypted.refreshExpiresAt,
     tokenType: encrypted.tokenType,
     expiresAt: encrypted.expiresAt,
     scope: encrypted.scope,
@@ -245,6 +309,9 @@ export async function exchangeCodeForTokens(
       ? Date.now() + tokenResponse.expires_in * 1000
       : Date.now() + 3600 * 1000, // Default 1 hour if not specified
     refreshToken: tokenResponse.refresh_token,
+    refreshExpiresAt: tokenResponse.refresh_expires_in
+      ? Date.now() + tokenResponse.refresh_expires_in * 1000
+      : undefined,
     scope: tokenResponse.scope,
   };
 
@@ -269,6 +336,10 @@ export async function refreshTokens(
   const currentTokens = getTokens(resourceUri);
   if (!currentTokens?.refreshToken) {
     throw new Error('No refresh token available');
+  }
+  if (currentTokens.refreshExpiresAt && currentTokens.refreshExpiresAt <= Date.now()) {
+    removeTokens(resourceUri);
+    throw new Error('Refresh token has expired');
   }
 
   console.log(`[TokenManager] Refreshing tokens at ${metadata.token_endpoint}`);
@@ -340,6 +411,9 @@ export async function refreshTokens(
       : Date.now() + 3600 * 1000,
     // Use new refresh token if provided, otherwise keep the old one
     refreshToken: tokenResponse.refresh_token || currentTokens.refreshToken,
+    refreshExpiresAt: tokenResponse.refresh_expires_in
+      ? Date.now() + tokenResponse.refresh_expires_in * 1000
+      : currentTokens.refreshExpiresAt,
     scope: tokenResponse.scope || currentTokens.scope,
   };
 
@@ -389,6 +463,7 @@ export async function getValidAccessToken(
 export function removeTokens(resourceUri: string): boolean {
   const deleted = tokenStore.delete(resourceUri);
   if (deleted) {
+    saveTokensToFile();
     console.log(`[TokenManager] Removed tokens for ${resourceUri}`);
   }
   return deleted;
@@ -399,6 +474,7 @@ export function removeTokens(resourceUri: string): boolean {
  */
 export function clearAllTokens(): void {
   tokenStore.clear();
+  saveTokensToFile();
   console.log('[TokenManager] Cleared all tokens');
 }
 

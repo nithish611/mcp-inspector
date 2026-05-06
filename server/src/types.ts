@@ -307,6 +307,8 @@ export interface OAuthTokens {
   accessToken: string;
   /** Refresh token for obtaining new access tokens */
   refreshToken?: string;
+  /** Refresh token expiration (Unix timestamp in milliseconds), if provided by server */
+  refreshExpiresAt?: number;
   /** Token type (usually "Bearer") */
   tokenType: string;
   /** Expiration time (Unix timestamp in milliseconds) */

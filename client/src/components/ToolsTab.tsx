@@ -26,14 +26,17 @@ import {
     Code,
     Copy,
     Expand,
+    Eye,
     FormInput,
     GripHorizontal,
     Layout,
     Loader2,
+    Pencil,
     Play,
     RefreshCw,
     Search,
     Sparkles,
+    TriangleAlert,
     UserRound,
     Wrench,
     X,
@@ -53,6 +56,23 @@ function getToolUiResourceUri(tool: Tool): string | undefined {
     return uri
   }
   return undefined
+}
+
+type ToolIntent = 'read' | 'write' | 'destructive'
+
+function getToolIntent(tool: Tool): ToolIntent {
+  const annotations = tool.annotations
+  if (annotations?.destructiveHint) return 'destructive'
+  if (annotations?.readOnlyHint) return 'read'
+  return 'write'
+}
+
+function getToolTitle(tool: Tool): string {
+  const title = tool.annotations?.title
+  if (typeof title === 'string' && title.trim().length > 0) {
+    return title
+  }
+  return tool.name
 }
 
 type SchemaNode = {
@@ -240,6 +260,7 @@ export function ToolsTab() {
   const [resultExpanded, setResultExpanded] = useState(false)
   const [expandedFieldKey, setExpandedFieldKey] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
+  const [confirmDestructive, setConfirmDestructive] = useState(false)
 
   const selectedToolResourceUri = selectedTool ? getToolUiResourceUri(selectedTool) : undefined
   const isAppTool = !!selectedToolResourceUri
@@ -274,6 +295,7 @@ export function ToolsTab() {
   // Initialize tool arguments when tool is selected
   useEffect(() => {
     if (selectedTool && activeServerId) {
+      setConfirmDestructive(false)
       // Try to get stored arguments first
       const storedArgs = getStoredToolArgs(activeServerId, selectedTool.name)
       if (storedArgs) {
@@ -409,6 +431,11 @@ export function ToolsTab() {
 
   const handleExecuteTool = useCallback(async () => {
     if (!selectedTool || !activeServerId) return
+    const toolIntent = getToolIntent(selectedTool)
+    if (toolIntent === 'destructive' && !confirmDestructive) {
+      toast('Confirm destructive action before executing this tool.')
+      return
+    }
 
     const resourceUri = getToolUiResourceUri(selectedTool)
     const startTime = Date.now()
@@ -481,7 +508,7 @@ export function ToolsTab() {
         isError: true,
       })
     }
-  }, [selectedTool, activeServerId, activeServer?.activePersona, inputMode, toolArgs, formValues, callToolMutation, fetchAppHtml])
+  }, [selectedTool, activeServerId, activeServer?.activePersona, confirmDestructive, inputMode, toolArgs, formValues, callToolMutation, fetchAppHtml])
 
   const handleGeneratePayload = useCallback(async () => {
     if (!selectedTool || !activeServerId) return
@@ -863,12 +890,47 @@ export function ToolsTab() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5">
                               <p className="font-medium font-mono text-sm truncate">
-                                {tool.name}
+                                {getToolTitle(tool)}
                               </p>
+                              {(() => {
+                                const intent = getToolIntent(tool)
+                                if (intent === 'read') {
+                                  return (
+                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 flex-shrink-0 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                                      <Eye className="h-2.5 w-2.5 mr-0.5" />
+                                      READ
+                                    </Badge>
+                                  )
+                                }
+                                if (intent === 'destructive') {
+                                  return (
+                                    <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 flex-shrink-0">
+                                      <TriangleAlert className="h-2.5 w-2.5 mr-0.5" />
+                                      DESTRUCTIVE
+                                    </Badge>
+                                  )
+                                }
+                                return (
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 flex-shrink-0">
+                                    <Pencil className="h-2.5 w-2.5 mr-0.5" />
+                                    WRITE
+                                  </Badge>
+                                )
+                              })()}
                               {getToolUiResourceUri(tool) && (
                                 <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 flex-shrink-0 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
                                   <Layout className="h-2.5 w-2.5 mr-0.5" />
                                   UI
+                                </Badge>
+                              )}
+                              {tool.annotations?.idempotentHint && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 flex-shrink-0">
+                                  IDEMPOTENT
+                                </Badge>
+                              )}
+                              {tool.annotations?.openWorldHint && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 flex-shrink-0">
+                                  OPEN-WORLD
                                 </Badge>
                               )}
                             </div>
@@ -1024,6 +1086,30 @@ export function ToolsTab() {
                       <p className="text-sm text-muted-foreground">
                         {selectedTool.description}
                       </p>
+                    )}
+                    {selectedTool && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant={getToolIntent(selectedTool) === 'destructive' ? 'destructive' : getToolIntent(selectedTool) === 'read' ? 'secondary' : 'outline'}>
+                          {getToolIntent(selectedTool) === 'destructive' ? 'Destructive Tool' : getToolIntent(selectedTool) === 'read' ? 'Read-only Tool' : 'Write Tool'}
+                        </Badge>
+                        {selectedTool.annotations?.idempotentHint && (
+                          <Badge variant="outline">Idempotent</Badge>
+                        )}
+                        {selectedTool.annotations?.openWorldHint && (
+                          <Badge variant="outline">Open world</Badge>
+                        )}
+                        {selectedTool.annotations?.destructiveHint && (
+                          <label className="flex items-center gap-2 text-xs text-destructive">
+                            <input
+                              type="checkbox"
+                              checked={confirmDestructive}
+                              onChange={(e) => setConfirmDestructive(e.target.checked)}
+                              className="h-3.5 w-3.5 rounded border-border cursor-pointer accent-destructive"
+                            />
+                            I confirm this destructive action
+                          </label>
+                        )}
+                      </div>
                     )}
 
                   </CardHeader>

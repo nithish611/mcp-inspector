@@ -7,33 +7,36 @@ import { ToolsTab } from '@/components/ToolsTab'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { useConnect, useConnectedServers, useDisconnect } from '@/hooks/useApi'
+import { useConnect, useConnectedServers, useDisconnect, useOAuthClear, useOAuthRefresh } from '@/hooks/useApi'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useWebSocket } from '@/hooks/useWebSocket'
+import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useLogsStore } from '@/stores/logsStore'
 import { useServersStore } from '@/stores/serversStore'
 import { useThemeStore } from '@/stores/themeStore'
 import {
-  Activity,
-  BookOpen,
-  ChevronRight,
-  FolderOpen,
-  Github,
-  Keyboard,
-  MessageSquare,
-  Moon,
-  Server as ServerIcon,
-  Sun,
-  Wrench,
+    Activity,
+    BookOpen,
+    ChevronRight,
+    Eraser,
+    FolderOpen,
+    Github,
+    Keyboard,
+    MessageSquare,
+    Moon,
+    RefreshCw,
+    Server as ServerIcon,
+    Sun,
+    Wrench,
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  type ImperativePanelHandle,
-  Panel,
-  PanelGroup,
-  PanelResizeHandle,
+    type ImperativePanelHandle,
+    Panel,
+    PanelGroup,
+    PanelResizeHandle,
 } from 'react-resizable-panels'
 
 export function Layout() {
@@ -60,6 +63,8 @@ export function Layout() {
 
   const connectMutation = useConnect()
   const disconnectMutation = useDisconnect()
+  const oauthRefreshMutation = useOAuthRefresh()
+  const oauthClearMutation = useOAuthClear()
   const { data: backendConnectedServers } = useConnectedServers()
 
   const activeServer = getActiveServer()
@@ -313,6 +318,38 @@ export function Layout() {
     }
   }
 
+  const handleRefreshAuth = async () => {
+    if (!activeServer?.config.url) {
+      toast('Select an HTTP server to refresh OAuth tokens.')
+      return
+    }
+
+    try {
+      const result = await oauthRefreshMutation.mutateAsync({
+        serverId: activeServer.id,
+        serverUrl: activeServer.config.url,
+      })
+      if (result.success) {
+        toast('OAuth token refresh successful.')
+      } else if (result.authorizationRequired) {
+        toast('Refresh failed. Re-authorization is required.')
+      } else {
+        toast(result.error || 'OAuth refresh failed.')
+      }
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'OAuth refresh failed.')
+    }
+  }
+
+  const handleClearAllAuth = async () => {
+    try {
+      await oauthClearMutation.mutateAsync()
+      toast('Cleared all stored OAuth tokens and registered clients.')
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Failed to clear OAuth data.')
+    }
+  }
+
   return (
     <div className="h-screen flex flex-col bg-background">
       {/* Header */}
@@ -415,6 +452,26 @@ export function Layout() {
               </div>
             )}
           </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            title="Refresh OAuth tokens"
+            onClick={handleRefreshAuth}
+            disabled={oauthRefreshMutation.isPending}
+          >
+            <RefreshCw className={cn('h-3.5 w-3.5', oauthRefreshMutation.isPending && 'animate-spin')} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            title="Clear all OAuth tokens"
+            onClick={handleClearAllAuth}
+            disabled={oauthClearMutation.isPending}
+          >
+            <Eraser className="h-3.5 w-3.5" />
+          </Button>
           <Button
             variant="ghost"
             size="icon"

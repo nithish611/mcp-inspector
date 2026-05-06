@@ -4,6 +4,9 @@
  */
 
 import crypto from 'crypto';
+import fs from 'fs';
+import { homedir } from 'os';
+import path from 'path';
 import type {
     AuthServerMetadata,
     DCRRequest,
@@ -13,9 +16,63 @@ import type {
 
 // In-memory storage for registered clients (keyed by issuer + resourceUri)
 const registeredClients = new Map<string, RegisteredClient>();
+const DCR_CACHE_DIR = path.join(homedir(), '.mcpinspector');
+const DCR_CACHE_FILE = path.join(DCR_CACHE_DIR, 'oauth-clients.json');
 
 // Encryption key for client secrets (should be set via environment variable)
 let encryptionKey: Buffer | null = null;
+
+interface DcrCacheFile {
+  version: 1;
+  clients: Record<string, RegisteredClient>;
+}
+
+function ensureDcrCacheDir(): void {
+  if (!fs.existsSync(DCR_CACHE_DIR)) {
+    fs.mkdirSync(DCR_CACHE_DIR, { recursive: true });
+  }
+}
+
+function saveClientsToFile(): void {
+  try {
+    ensureDcrCacheDir();
+    const clients: Record<string, RegisteredClient> = {};
+    for (const [key, client] of registeredClients.entries()) {
+      clients[key] = client;
+    }
+    const payload: DcrCacheFile = {
+      version: 1,
+      clients,
+    };
+    fs.writeFileSync(DCR_CACHE_FILE, JSON.stringify(payload, null, 2), 'utf8');
+  } catch (error) {
+    console.error('[DCR] Failed to persist registered clients:', error);
+  }
+}
+
+function loadClientsFromFile(): void {
+  try {
+    if (!fs.existsSync(DCR_CACHE_FILE)) {
+      return;
+    }
+    const raw = fs.readFileSync(DCR_CACHE_FILE, 'utf8');
+    const parsed = JSON.parse(raw) as DcrCacheFile;
+    if (!parsed || typeof parsed !== 'object' || !parsed.clients) {
+      return;
+    }
+    let loaded = 0;
+    for (const [key, client] of Object.entries(parsed.clients)) {
+      if (!client || typeof client !== 'object') continue;
+      registeredClients.set(key, client);
+      loaded += 1;
+    }
+    if (loaded > 0) {
+      console.log(`[DCR] Loaded ${loaded} registered client(s) from ${DCR_CACHE_FILE}`);
+    }
+  } catch (error) {
+    console.error('[DCR] Failed to load persisted clients:', error);
+  }
+}
 
 /**
  * Initialize the DCR module with an encryption key
@@ -29,6 +86,7 @@ export function initializeDcr(key?: string): void {
     console.warn('[DCR] No encryption key provided - client secrets will be stored in plain text');
     encryptionKey = null;
   }
+  loadClientsFromFile();
 }
 
 /**
@@ -103,6 +161,7 @@ export function getRegisteredClient(issuer: string, resourceUri: string, redirec
       if (clientWithRedirect.clientSecretExpiresAt && clientWithRedirect.clientSecretExpiresAt < Date.now() / 1000) {
         console.log('[DCR] Registered client secret has expired, removing from cache');
         registeredClients.delete(keyWithRedirect);
+        saveClientsToFile();
       } else {
         return {
           ...clientWithRedirect,
@@ -119,6 +178,7 @@ export function getRegisteredClient(issuer: string, resourceUri: string, redirec
       if (client.clientSecretExpiresAt && client.clientSecretExpiresAt < Date.now() / 1000) {
         console.log('[DCR] Registered client secret has expired, removing from cache');
         registeredClients.delete(key);
+        saveClientsToFile();
         continue;
       }
       
@@ -153,6 +213,7 @@ function storeRegisteredClient(
 
   const key = getClientCacheKey(issuer, resourceUri, redirectUri);
   registeredClients.set(key, client);
+  saveClientsToFile();
 
   console.log(`[DCR] Stored registered client: ${response.client_id}`);
   return {
@@ -271,7 +332,9 @@ export async function registerClient(
  */
 export function removeRegisteredClient(issuer: string, resourceUri: string): boolean {
   const key = getClientCacheKey(issuer, resourceUri);
-  return registeredClients.delete(key);
+  const deleted = registeredClients.delete(key);
+  if (deleted) saveClientsToFile();
+  return deleted;
 }
 
 /**
@@ -279,6 +342,7 @@ export function removeRegisteredClient(issuer: string, resourceUri: string): boo
  */
 export function clearRegisteredClients(): void {
   registeredClients.clear();
+  saveClientsToFile();
   console.log('[DCR] Cleared all registered clients');
 }
 
