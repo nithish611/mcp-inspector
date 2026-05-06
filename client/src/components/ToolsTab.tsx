@@ -1,5 +1,6 @@
 import { JsonEditor } from '@/components/JsonEditor'
 import { McpAppViewer } from '@/components/McpAppViewer'
+import { ToolHistoryPanel } from '@/components/ToolHistoryPanel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,13 +13,16 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { useCallTool, useClearPersona, useDeletePersonaEmail, usePersonaEmails, useReadResource, useTokenExchange, useTools, type Tool } from '@/hooks/useApi'
+import { useCallTool, useClearPersona, useDeletePersonaEmail, useGeneratePayload, usePersonaEmails, useReadResource, useTokenExchange, useTools, type Tool } from '@/hooks/useApi'
+import { toast } from '@/lib/toast'
 import { cn, copyToClipboard, parseMcpResult, type ParsedMcpResult } from '@/lib/utils'
+import { useHistoryStore } from '@/stores/historyStore'
 import { useServersStore } from '@/stores/serversStore'
 import {
     AlertCircle,
     ChevronDown,
     ChevronRight,
+    Clock,
     Code,
     Copy,
     Expand,
@@ -29,6 +33,7 @@ import {
     Play,
     RefreshCw,
     Search,
+    Sparkles,
     UserRound,
     Wrench,
     X,
@@ -89,6 +94,15 @@ function buildSkeleton(schema: SchemaNode, depth = 0): unknown {
   }
 }
 
+function argsToFormValues(args: Record<string, unknown>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(args).map(([k, v]) => [
+      k,
+      typeof v === 'object' && v !== null ? JSON.stringify(v, null, 2) : String(v),
+    ])
+  )
+}
+
 const TOOL_ARGS_STORAGE_KEY = 'mcp-tool-args'
 
 // Get stored tool arguments
@@ -123,6 +137,8 @@ function storeToolArgs(serverId: string, toolName: string, args: string): void {
 // Local storage key for tool results cache
 const TOOL_RESULTS_CACHE_KEY = 'mcp-tool-results-cache'
 
+type CachedToolEntry = ParsedMcpResult & { _cachedAt?: number }
+
 // Get cached tool result
 function getCachedToolResult(serverId: string, toolName: string): ParsedMcpResult | null {
   try {
@@ -137,7 +153,7 @@ function getCachedToolResult(serverId: string, toolName: string): ParsedMcpResul
   return null
 }
 
-// Store tool result in cache
+// Store tool result in cache with timestamp
 function storeCachedToolResult(serverId: string, toolName: string, result: ParsedMcpResult): void {
   try {
     const stored = localStorage.getItem(TOOL_RESULTS_CACHE_KEY)
@@ -145,7 +161,7 @@ function storeCachedToolResult(serverId: string, toolName: string, result: Parse
     if (!data[serverId]) {
       data[serverId] = {}
     }
-    data[serverId][toolName] = result
+    data[serverId][toolName] = { ...result, _cachedAt: Date.now() }
     localStorage.setItem(TOOL_RESULTS_CACHE_KEY, JSON.stringify(data))
   } catch {
     // Ignore errors
@@ -195,6 +211,7 @@ export function ToolsTab() {
   
   const { data: tools, isLoading, refetch, error } = useTools(activeServerId || '')
   const callToolMutation = useCallTool()
+  const generatePayloadMutation = useGeneratePayload()
   const readResourceMutation = useReadResource()
   const tokenExchangeMutation = useTokenExchange()
   const clearPersonaMutation = useClearPersona()
@@ -222,6 +239,7 @@ export function ToolsTab() {
   const [schemaDialogTool, setSchemaDialogTool] = useState<Tool | null>(null)
   const [resultExpanded, setResultExpanded] = useState(false)
   const [expandedFieldKey, setExpandedFieldKey] = useState<string | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
 
   const selectedToolResourceUri = selectedTool ? getToolUiResourceUri(selectedTool) : undefined
   const isAppTool = !!selectedToolResourceUri
@@ -393,6 +411,7 @@ export function ToolsTab() {
     if (!selectedTool || !activeServerId) return
 
     const resourceUri = getToolUiResourceUri(selectedTool)
+    const startTime = Date.now()
 
     try {
       const args = inputMode === 'json' ? JSON.parse(toolArgs) : formValues
@@ -409,36 +428,139 @@ export function ToolsTab() {
       storeCachedToolResult(activeServerId, selectedTool.name, parsed)
       saveFieldValues(selectedTool.name, inputMode === 'form' ? formValues : {})
 
+      useHistoryStore.getState().addEntry({
+        serverId: activeServerId,
+        toolName: selectedTool.name,
+        args: Object.keys(args).length > 0 ? args : {},
+        result: parsed,
+        timestamp: startTime,
+        durationMs: Date.now() - startTime,
+        isError: parsed.isError,
+      })
+
       if (resourceUri) {
         setResultViewMode('ui')
         fetchAppHtml(resourceUri)
       }
     } catch (error) {
+      let parsedError: ParsedMcpResult
       if (error instanceof SyntaxError) {
         const errorResult = { error: 'Invalid JSON in arguments' }
         setToolResult(errorResult)
-        setParsedResult({ 
-          data: errorResult, 
-          rawText: JSON.stringify(errorResult, null, 2), 
-          isJson: true, 
-          isError: true, 
-          contentType: 'text' 
-        })
+        parsedError = {
+          data: errorResult,
+          rawText: JSON.stringify(errorResult, null, 2),
+          isJson: true,
+          isError: true,
+          contentType: 'text'
+        }
       } else {
         const errorResult = {
           error: error instanceof Error ? error.message : 'Tool execution failed',
         }
         setToolResult(errorResult)
-        setParsedResult({ 
-          data: errorResult, 
-          rawText: JSON.stringify(errorResult, null, 2), 
-          isJson: true, 
-          isError: true, 
-          contentType: 'text' 
-        })
+        parsedError = {
+          data: errorResult,
+          rawText: JSON.stringify(errorResult, null, 2),
+          isJson: true,
+          isError: true,
+          contentType: 'text'
+        }
       }
+      setParsedResult(parsedError)
+
+      let errorArgs: Record<string, unknown> = {}
+      try { errorArgs = inputMode === 'json' ? JSON.parse(toolArgs) : formValues } catch { /* ignore */ }
+      useHistoryStore.getState().addEntry({
+        serverId: activeServerId,
+        toolName: selectedTool.name,
+        args: errorArgs,
+        result: parsedError,
+        timestamp: startTime,
+        durationMs: Date.now() - startTime,
+        isError: true,
+      })
     }
   }, [selectedTool, activeServerId, activeServer?.activePersona, inputMode, toolArgs, formValues, callToolMutation, fetchAppHtml])
+
+  const handleGeneratePayload = useCallback(async () => {
+    if (!selectedTool || !activeServerId) return
+
+    try {
+      // Collect relevant cached results, prioritized by most recently executed
+      let refPayload: Record<string, unknown> | undefined
+      try {
+        const stored = localStorage.getItem(TOOL_RESULTS_CACHE_KEY)
+        if (stored) {
+          const allCached = JSON.parse(stored)
+          const serverCache = allCached[activeServerId] as Record<string, CachedToolEntry> | undefined
+          if (serverCache) {
+            const schemaFields = new Set(
+              Object.keys(selectedTool.inputSchema.properties || {}).map(k => k.toLowerCase())
+            )
+
+            const hasRelevantKey = (obj: unknown): boolean => {
+              if (!obj || typeof obj !== 'object') return false
+              if (Array.isArray(obj)) return obj.some(hasRelevantKey)
+              for (const key of Object.keys(obj as Record<string, unknown>)) {
+                if (schemaFields.has(key.toLowerCase())) return true
+                if (hasRelevantKey((obj as Record<string, unknown>)[key])) return true
+              }
+              return false
+            }
+
+            // Filter relevant entries, then sort by most recent first
+            const relevant = Object.entries(serverCache)
+              .filter(([toolName, entry]) => toolName !== selectedTool.name && entry?.data && hasRelevantKey(entry.data))
+              .sort(([, a], [, b]) => (b._cachedAt || 0) - (a._cachedAt || 0))
+
+            // Build payload from most recent first, respecting size limit
+            if (relevant.length > 0) {
+              const referenceData: Record<string, unknown> = {}
+              let size = 2
+              for (const [toolName, entry] of relevant) {
+                const entryStr = JSON.stringify({ [toolName]: entry.data })
+                if (size + entryStr.length > 50000) break
+                referenceData[toolName] = entry.data
+                size += entryStr.length
+              }
+              if (Object.keys(referenceData).length > 0) {
+                refPayload = referenceData
+              }
+            }
+          }
+        }
+      } catch {
+        // Ignore localStorage errors
+      }
+
+      const result = await generatePayloadMutation.mutateAsync({
+        toolName: selectedTool.name,
+        toolDescription: selectedTool.description,
+        inputSchema: selectedTool.inputSchema as Record<string, unknown>,
+        referenceData: refPayload,
+      })
+
+      const generated = result.payload
+      const jsonStr = JSON.stringify(generated, null, 2)
+      setToolArgs(jsonStr)
+
+      const newFormValues: Record<string, string> = {}
+      Object.entries(generated).forEach(([k, v]) => {
+        if (typeof v === 'object' && v !== null) {
+          newFormValues[k] = JSON.stringify(v, null, 2)
+        } else {
+          newFormValues[k] = String(v)
+        }
+      })
+      setFormValues(newFormValues)
+
+      toast('Payload generated with reference data')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Generation failed'
+      toast(`AI generation failed: ${message}`, 3000)
+    }
+  }, [selectedTool, activeServerId, generatePayloadMutation])
 
   const handleCallToolFromApp = useCallback(async (name: string, args?: Record<string, unknown>) => {
     if (!activeServerId) throw new Error('No server connected')
@@ -814,9 +936,9 @@ export function ToolsTab() {
         {/* Tool Execution Panel */}
         <Panel defaultSize={75} minSize={40}>
           <div className="h-full flex flex-col">
-            <PanelGroup direction="vertical" className="h-full">
+            <PanelGroup direction="vertical" className="h-full" key={showHistory ? 'with-history' : 'no-history'}>
               {/* Arguments Editor */}
-              <Panel defaultSize={50} minSize={20}>
+              <Panel defaultSize={showHistory ? 35 : 50} minSize={20}>
                 <Card className="h-full flex flex-col">
                   <CardHeader className="flex-shrink-0 space-y-1 p-4 pb-2">
                     <div className="flex items-center justify-between gap-2">
@@ -858,6 +980,31 @@ export function ToolsTab() {
                               Form
                             </button>
                           </div>
+                        )}
+                        {selectedTool && (
+                          <Button
+                            variant="outline"
+                            onClick={handleGeneratePayload}
+                            disabled={generatePayloadMutation.isPending}
+                            title="Generate sample payload using AI"
+                          >
+                            {generatePayloadMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : (
+                              <Sparkles className="h-4 w-4 mr-2" />
+                            )}
+                            AI Fill
+                          </Button>
+                        )}
+                        {selectedTool && (
+                          <Button
+                            variant={showHistory ? 'secondary' : 'ghost'}
+                            size="sm"
+                            onClick={() => setShowHistory(prev => !prev)}
+                            title="Execution history"
+                          >
+                            <Clock className="h-4 w-4" />
+                          </Button>
                         )}
                         <Button
                           onClick={handleExecuteTool}
@@ -1003,7 +1150,7 @@ export function ToolsTab() {
               </PanelResizeHandle>
 
               {/* Results Panel */}
-              <Panel defaultSize={50} minSize={20}>
+              <Panel defaultSize={showHistory ? 35 : 50} minSize={20}>
                 <Card className="h-full flex flex-col">
                   <CardHeader className="flex-shrink-0 p-4 pb-2">
                     <div className="flex items-center justify-between gap-2">
@@ -1098,6 +1245,32 @@ export function ToolsTab() {
                   </CardContent>
                 </Card>
               </Panel>
+
+              {/* History Panel */}
+              {showHistory && selectedTool && activeServerId && (
+                <>
+                  <PanelResizeHandle className="h-2 my-1 flex items-center justify-center group">
+                    <GripHorizontal className="h-4 w-4 text-muted-foreground group-hover:text-primary/50 transition-colors" />
+                  </PanelResizeHandle>
+                  <Panel defaultSize={30} minSize={15}>
+                    <Card className="h-full flex flex-col">
+                      <ToolHistoryPanel
+                        serverId={activeServerId}
+                        toolName={selectedTool.name}
+                        onLoadArgs={(args) => {
+                          setToolArgs(JSON.stringify(args, null, 2))
+                          setFormValues(argsToFormValues(args))
+                        }}
+                        onReplay={(args) => {
+                          setToolArgs(JSON.stringify(args, null, 2))
+                          setFormValues(argsToFormValues(args))
+                          setTimeout(() => handleExecuteTool(), 0)
+                        }}
+                      />
+                    </Card>
+                  </Panel>
+                </>
+              )}
             </PanelGroup>
           </div>
         </Panel>

@@ -1,4 +1,5 @@
 import { LogsTab } from '@/components/LogsTab'
+import { NotebooksTab } from '@/components/NotebooksTab'
 import { PromptsTab } from '@/components/PromptsTab'
 import { ResourcesTab } from '@/components/ResourcesTab'
 import { ServerList } from '@/components/ServerList'
@@ -16,6 +17,7 @@ import { useServersStore } from '@/stores/serversStore'
 import { useThemeStore } from '@/stores/themeStore'
 import {
   Activity,
+  BookOpen,
   ChevronRight,
   FolderOpen,
   Github,
@@ -242,6 +244,8 @@ export function Layout() {
     onSwitchToTools: () => setActiveTab('tools'),
     onSwitchToResources: () => setActiveTab('resources'),
     onSwitchToPrompts: () => setActiveTab('prompts'),
+    onSwitchToNotebooks: () => setActiveTab('notebooks'),
+    onSwitchToLogs: () => setActiveTab('logs'),
   })
 
   const handleConnect = async (serverId: string) => {
@@ -380,8 +384,12 @@ export function Layout() {
                     <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">⌘L</kbd>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Clear logs</span>
+                    <span className="text-muted-foreground">Command palette</span>
                     <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">⌘K</kbd>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Clear logs</span>
+                    <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">⌘⇧K</kbd>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Tools tab</span>
@@ -394,6 +402,14 @@ export function Layout() {
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Prompts tab</span>
                     <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">⌘3</kbd>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Notebooks tab</span>
+                    <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">⌘4</kbd>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Logs tab</span>
+                    <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">⌘5</kbd>
                   </div>
                 </div>
               </div>
@@ -502,6 +518,13 @@ export function Layout() {
                       Prompts
                     </TabsTrigger>
                     <TabsTrigger
+                      value="notebooks"
+                      className="data-[state=active]:bg-muted"
+                    >
+                      <BookOpen className="h-4 w-4 mr-2" />
+                      Notebooks
+                    </TabsTrigger>
+                    <TabsTrigger
                       value="logs"
                       className="data-[state=active]:bg-muted"
                     >
@@ -524,6 +547,9 @@ export function Layout() {
                 </TabsContent>
                 <TabsContent value="prompts" className="flex-1 overflow-hidden m-0">
                   <PromptsTab />
+                </TabsContent>
+                <TabsContent value="notebooks" className="flex-1 overflow-hidden m-0">
+                  <NotebooksTab />
                 </TabsContent>
                 <TabsContent value="logs" className="flex-1 overflow-hidden m-0">
                   <LogsTab onClearLogs={clearServerLogs} />

@@ -1,0 +1,43 @@
+<h2>Where do notebooks live in the UI?</h2>
+<p class="subtitle">Both options reuse the existing layout — the question is navigation placement</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>New Tab — "Notebooks" tab next to Tools/Resources/Prompts/Logs</h3>
+      <p>Notebooks are always scoped to the active server in the sidebar. Switching servers switches which notebooks you see. The notebook editor replaces the tools panel layout (tool list + args + results becomes cell list + cell editor + cell results).</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Zero sidebar changes — just add a tab</li>
+          <li>Server context is implicit (active server)</li>
+          <li>Familiar navigation pattern</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>Notebooks tied to one server at a time</li>
+          <li>Can't see tools list and notebook side by side</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Sidebar Section — Notebooks listed below server list</h3>
+      <p>A collapsible "Notebooks" section appears in the left sidebar under servers. Clicking a notebook replaces the entire tab area with the notebook editor. Clicking a server switches back to Inspector tabs. Notebooks reference a server but aren't nested under one.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Notebooks are first-class objects, not per-server</li>
+          <li>Can reference any connected server</li>
+          <li>Natural "workspace" feel</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>Sidebar gets more crowded</li>
+          <li>Need to handle server-ref resolution in notebook</li>
+          <li>Slightly more layout work</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+</div>

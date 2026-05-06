@@ -9,6 +9,8 @@ interface ShortcutHandlers {
   onSwitchToTools?: () => void
   onSwitchToResources?: () => void
   onSwitchToPrompts?: () => void
+  onSwitchToNotebooks?: () => void
+  onSwitchToLogs?: () => void
 }
 
 export function useKeyboardShortcuts(handlers: ShortcutHandlers = {}) {
@@ -17,10 +19,9 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers = {}) {
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
-      // Check for modifier key (Cmd on Mac, Ctrl on Windows/Linux)
       const isMod = event.metaKey || event.ctrlKey
 
-      // Ignore if typing in an input
+      // Ignore if typing in an input (unless it's a mod combo)
       const target = event.target as HTMLElement
       if (
         target.tagName === 'INPUT' ||
@@ -30,7 +31,7 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers = {}) {
         return
       }
 
-      // Cmd/Ctrl + D - Toggle dark mode
+      // Cmd/Ctrl + D - Toggle dark mode (global, unless notebook tab overrides)
       if (isMod && event.key === 'd') {
         event.preventDefault()
         handlers.onToggleTheme?.() ?? toggleTheme()
@@ -44,14 +45,14 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers = {}) {
         return
       }
 
-      // Cmd/Ctrl + K - Clear logs
-      if (isMod && event.key === 'k') {
+      // Cmd/Ctrl + Shift + K - Clear logs (moved from Cmd+K)
+      if (isMod && event.shiftKey && event.key === 'k') {
         event.preventDefault()
         handlers.onClearLogs?.() ?? clearLogs()
         return
       }
 
-      // Number keys for tab switching (1, 2, 3)
+      // Number keys for tab switching (1-5)
       if (isMod && event.key === '1') {
         event.preventDefault()
         handlers.onSwitchToTools?.()
@@ -69,6 +70,18 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers = {}) {
         handlers.onSwitchToPrompts?.()
         return
       }
+
+      if (isMod && event.key === '4') {
+        event.preventDefault()
+        handlers.onSwitchToNotebooks?.()
+        return
+      }
+
+      if (isMod && event.key === '5') {
+        event.preventDefault()
+        handlers.onSwitchToLogs?.()
+        return
+      }
     },
     [handlers, toggleTheme, toggleExpanded, clearLogs]
   )
@@ -79,12 +92,14 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers = {}) {
   }, [handleKeyDown])
 }
 
-// Keyboard shortcuts help text
 export const keyboardShortcuts = [
   { keys: ['⌘/Ctrl', 'D'], description: 'Toggle dark mode' },
   { keys: ['⌘/Ctrl', 'L'], description: 'Toggle logs panel' },
-  { keys: ['⌘/Ctrl', 'K'], description: 'Clear logs' },
+  { keys: ['⌘/Ctrl', 'K'], description: 'Command palette' },
+  { keys: ['⌘/Ctrl', '⇧', 'K'], description: 'Clear logs' },
   { keys: ['⌘/Ctrl', '1'], description: 'Switch to Tools tab' },
   { keys: ['⌘/Ctrl', '2'], description: 'Switch to Resources tab' },
   { keys: ['⌘/Ctrl', '3'], description: 'Switch to Prompts tab' },
+  { keys: ['⌘/Ctrl', '4'], description: 'Switch to Notebooks tab' },
+  { keys: ['⌘/Ctrl', '5'], description: 'Switch to Logs tab' },
 ]

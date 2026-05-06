@@ -4,35 +4,36 @@ import { existsSync } from 'fs';
 import { createServer } from 'http';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { generatePayload } from './bedrockService.js';
 import connectionManager from './connectionManager.js';
 import httpLogger from './httpLogger.js';
 import {
-    clearAllTokens,
-    clearPersonaTokens,
-    clearRegisteredClients,
-    discoverAuthServerMetadata,
-    getAccessToken,
-    getAllRegisteredClients,
-    getCanonicalResourceUri,
-    getOAuthStatus,
-    getRegisteredClient,
-    getTokenIssuer,
-    getTokens,
-    getTokenStatus,
-    handleAuthCallback,
-    initializeOAuth,
-    initiateAuthFlow,
-    performTokenExchange,
-    revokeAuthorization,
-    storePersonaToken,
+  clearAllTokens,
+  clearPersonaTokens,
+  clearRegisteredClients,
+  discoverAuthServerMetadata,
+  getAccessToken,
+  getAllRegisteredClients,
+  getCanonicalResourceUri,
+  getOAuthStatus,
+  getRegisteredClient,
+  getTokenIssuer,
+  getTokens,
+  getTokenStatus,
+  handleAuthCallback,
+  initializeOAuth,
+  initiateAuthFlow,
+  performTokenExchange,
+  revokeAuthorization,
+  storePersonaToken,
 } from './oauth/index.js';
 import { getPersonaEmails, removePersonaEmail, savePersonaEmail } from './personaCache.js';
 import type {
-    OAuthConfig,
-    PromptGetRequest,
-    ResourceReadRequest,
-    ServerConfig,
-    ToolCallRequest,
+  OAuthConfig,
+  PromptGetRequest,
+  ResourceReadRequest,
+  ServerConfig,
+  ToolCallRequest,
 } from './types.js';
 import wsManager from './websocket.js';
 
@@ -51,7 +52,8 @@ const DEFAULT_REDIRECT_URI = process.env.OAUTH_REDIRECT_URI || `http://localhost
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ limit: "5mb"}))
 
 // Request logging middleware
 app.use((req: Request, _res: Response, next: NextFunction) => {
@@ -196,6 +198,24 @@ app.post('/api/prompts/get', async (req: Request, res: Response) => {
     res.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Prompt get failed';
+    res.status(500).json({ error: message });
+  }
+});
+
+// AI Payload Generation endpoint
+app.post('/api/ai/generate-payload', async (req: Request, res: Response) => {
+  try {
+    const { toolName, toolDescription, inputSchema, referenceData } = req.body;
+
+    if (!toolName || !inputSchema) {
+      res.status(400).json({ error: 'toolName and inputSchema are required' });
+      return;
+    }
+
+    const payload = await generatePayload({ toolName, toolDescription, inputSchema, referenceData });
+    res.json({ payload });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Payload generation failed';
     res.status(500).json({ error: message });
   }
 });

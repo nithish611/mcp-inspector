@@ -385,6 +385,32 @@ export function useDeletePersonaEmail() {
   })
 }
 
+// ============================================================================
+// AI Payload Generation hooks
+// ============================================================================
+
+export interface GeneratePayloadRequest {
+  toolName: string
+  toolDescription?: string
+  inputSchema: Record<string, unknown>
+  referenceData?: Record<string, unknown>
+}
+
+export interface GeneratePayloadResponse {
+  payload: Record<string, unknown>
+}
+
+export function useGeneratePayload() {
+  return useMutation({
+    mutationFn: async (params: GeneratePayloadRequest) => {
+      return fetchApi<GeneratePayloadResponse>('/ai/generate-payload', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      })
+    },
+  })
+}
+
 export function useClearPersona() {
   return useMutation({
     mutationFn: async (serverId: string) => {
