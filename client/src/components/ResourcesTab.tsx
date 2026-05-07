@@ -85,11 +85,11 @@ export function ResourcesTab() {
   }
 
   return (
-    <div className="h-full p-4">
+    <div className="h-full p-2.5">
       <PanelGroup direction="horizontal" className="h-full">
         {/* Resources List */}
         <Panel defaultSize={35} minSize={20}>
-          <Card className="h-full flex flex-col">
+          <Card variant="panel" className="h-full flex flex-col">
             <CardHeader className="pb-3 flex-shrink-0">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -135,10 +135,10 @@ export function ResourcesTab() {
                       <div
                         key={resource.uri}
                         className={cn(
-                          'p-3 rounded-lg border cursor-pointer transition-colors',
+                          'p-3 rounded-lg border cursor-pointer transition-all',
                           selectedResource?.uri === resource.uri
-                            ? 'border-primary bg-primary/5'
-                            : 'border-border hover:border-primary/50 hover:bg-muted/50'
+                            ? 'border-primary/60 bg-primary/10'
+                            : 'border-border/70 hover:border-primary/50 hover:bg-muted/35'
                         )}
                         onClick={() => handleReadResource(resource)}
                       >
@@ -178,7 +178,7 @@ export function ResourcesTab() {
 
         {/* Resource Content Preview */}
         <Panel defaultSize={65} minSize={30}>
-          <Card className="h-full flex flex-col">
+          <Card variant="panel" className="h-full flex flex-col">
             <CardHeader className="pb-3 flex-shrink-0">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg flex items-center gap-2">

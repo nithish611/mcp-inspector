@@ -5,10 +5,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,27 +19,27 @@ import { cn, copyToClipboard, parseMcpResult, type ParsedMcpResult } from '@/lib
 import { useHistoryStore } from '@/stores/historyStore'
 import { useServersStore } from '@/stores/serversStore'
 import {
-    AlertCircle,
-    ChevronDown,
-    ChevronRight,
-    Clock,
-    Code,
-    Copy,
-    Expand,
-    Eye,
-    FormInput,
-    GripHorizontal,
-    Layout,
-    Loader2,
-    Pencil,
-    Play,
-    RefreshCw,
-    Search,
-    Sparkles,
-    TriangleAlert,
-    UserRound,
-    Wrench,
-    X,
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  Code,
+  Copy,
+  Expand,
+  Eye,
+  FormInput,
+  GripHorizontal,
+  Layout,
+  Loader2,
+  Pencil,
+  Play,
+  RefreshCw,
+  Search,
+  Sparkles,
+  TriangleAlert,
+  UserRound,
+  Wrench,
+  X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
@@ -261,6 +261,7 @@ export function ToolsTab() {
   const [expandedFieldKey, setExpandedFieldKey] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
   const [confirmDestructive, setConfirmDestructive] = useState(false)
+  const executeAbortControllerRef = useRef<AbortController | null>(null)
 
   const selectedToolResourceUri = selectedTool ? getToolUiResourceUri(selectedTool) : undefined
   const isAppTool = !!selectedToolResourceUri
@@ -439,6 +440,8 @@ export function ToolsTab() {
 
     const resourceUri = getToolUiResourceUri(selectedTool)
     const startTime = Date.now()
+    const abortController = new AbortController()
+    executeAbortControllerRef.current = abortController
 
     try {
       const args = inputMode === 'json' ? JSON.parse(toolArgs) : formValues
@@ -448,6 +451,7 @@ export function ToolsTab() {
         name: selectedTool.name,
         arguments: Object.keys(args).length > 0 ? args : undefined,
         personaEmail: persona?.email,
+        signal: abortController.signal,
       })
       setToolResult(result)
       const parsed = parseMcpResult(result)
@@ -471,7 +475,17 @@ export function ToolsTab() {
       }
     } catch (error) {
       let parsedError: ParsedMcpResult
-      if (error instanceof SyntaxError) {
+      if (abortController.signal.aborted) {
+        const errorResult = { error: 'Execution cancelled by user' }
+        setToolResult(errorResult)
+        parsedError = {
+          data: errorResult,
+          rawText: JSON.stringify(errorResult, null, 2),
+          isJson: true,
+          isError: true,
+          contentType: 'text',
+        }
+      } else if (error instanceof SyntaxError) {
         const errorResult = { error: 'Invalid JSON in arguments' }
         setToolResult(errorResult)
         parsedError = {
@@ -507,8 +521,16 @@ export function ToolsTab() {
         durationMs: Date.now() - startTime,
         isError: true,
       })
+    } finally {
+      if (executeAbortControllerRef.current === abortController) {
+        executeAbortControllerRef.current = null
+      }
     }
   }, [selectedTool, activeServerId, activeServer?.activePersona, confirmDestructive, inputMode, toolArgs, formValues, callToolMutation, fetchAppHtml])
+
+  const handleCancelExecute = useCallback(() => {
+    executeAbortControllerRef.current?.abort()
+  }, [])
 
   const handleGeneratePayload = useCallback(async () => {
     if (!selectedTool || !activeServerId) return
@@ -692,10 +714,10 @@ export function ToolsTab() {
     (activeServer.config.type === 'streamable-http' || activeServer.config.type === 'sse')
 
   return (
-    <div className="h-full p-3 flex flex-col gap-2">
+    <div className="h-full p-2.5 flex flex-col gap-2">
       {/* Global Persona Bar */}
       {showPersonaBar && (
-        <div className="flex-shrink-0 rounded-md border bg-muted/30 px-3 py-2">
+        <div className="flex-shrink-0 rounded-xl border border-border/70 bg-muted/20 px-3 py-2.5">
           {activeServer.activePersona ? (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -808,7 +830,7 @@ export function ToolsTab() {
       <PanelGroup direction="horizontal" className="flex-1 min-h-0">
         {/* Tools List Panel */}
         <Panel defaultSize={25} minSize={15} maxSize={40}>
-          <Card className="h-full flex flex-col">
+          <Card variant="panel" className="h-full flex flex-col">
             <CardHeader className="flex-shrink-0 space-y-1.5 p-4 pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base flex items-center gap-2">
@@ -879,10 +901,10 @@ export function ToolsTab() {
                       <div
                         key={tool.name}
                         className={cn(
-                          'p-2.5 rounded-md border cursor-pointer transition-colors',
+                          'p-2.5 rounded-lg border cursor-pointer transition-all',
                           selectedTool?.name === tool.name
-                            ? 'border-primary bg-primary/5'
-                            : 'border-border hover:border-primary/50 hover:bg-muted/50'
+                            ? 'border-primary/60 bg-primary/10 shadow-[0_12px_30px_-22px_hsl(var(--primary)/0.9)]'
+                            : 'border-border/70 hover:border-primary/50 hover:bg-muted/35'
                         )}
                         onClick={() => setSelectedTool(tool)}
                       >
@@ -1001,7 +1023,7 @@ export function ToolsTab() {
             <PanelGroup direction="vertical" className="h-full" key={showHistory ? 'with-history' : 'no-history'}>
               {/* Arguments Editor */}
               <Panel defaultSize={showHistory ? 35 : 50} minSize={20}>
-                <Card className="h-full flex flex-col">
+                <Card variant="panel" className="h-full flex flex-col">
                   <CardHeader className="flex-shrink-0 space-y-1 p-4 pb-2">
                     <div className="flex items-center justify-between gap-2">
                       <CardTitle className="text-base">
@@ -1016,7 +1038,7 @@ export function ToolsTab() {
                       </CardTitle>
                       <div className="flex items-center gap-2">
                         {selectedTool && (
-                          <div className="flex items-center border rounded-md p-0.5">
+                          <div className="flex items-center border border-border/70 rounded-md p-0.5 bg-muted/20">
                             <button
                               className={cn(
                                 'px-2 py-1 text-xs rounded transition-colors flex items-center gap-1',
@@ -1069,16 +1091,22 @@ export function ToolsTab() {
                           </Button>
                         )}
                         <Button
-                          onClick={handleExecuteTool}
-                          disabled={!selectedTool || callToolMutation.isPending}
+                          onClick={callToolMutation.isPending ? handleCancelExecute : handleExecuteTool}
+                          disabled={!selectedTool}
                           title="Execute (⌘+Enter)"
+                          variant={callToolMutation.isPending ? 'destructive' : 'default'}
                         >
                           {callToolMutation.isPending ? (
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Cancel
+                            </>
                           ) : (
-                            <Play className="h-4 w-4 mr-2" />
+                            <>
+                              <Play className="h-4 w-4 mr-2" />
+                              Execute
+                            </>
                           )}
-                          Execute
                         </Button>
                       </div>
                     </div>
@@ -1237,7 +1265,7 @@ export function ToolsTab() {
 
               {/* Results Panel */}
               <Panel defaultSize={showHistory ? 35 : 50} minSize={20}>
-                <Card className="h-full flex flex-col">
+                <Card variant="panel" className="h-full flex flex-col">
                   <CardHeader className="flex-shrink-0 p-4 pb-2">
                     <div className="flex items-center justify-between gap-2">
                       <CardTitle className="text-base flex items-center gap-2">
@@ -1248,7 +1276,7 @@ export function ToolsTab() {
                       </CardTitle>
                       <div className="flex items-center gap-2">
                         {isAppTool && parsedResult && (
-                          <div className="flex items-center border rounded-md p-0.5">
+                          <div className="flex items-center border border-border/70 rounded-md p-0.5 bg-muted/20">
                             <button
                               className={cn(
                                 'px-2 py-1 text-xs rounded transition-colors flex items-center gap-1',
@@ -1339,7 +1367,7 @@ export function ToolsTab() {
                     <GripHorizontal className="h-4 w-4 text-muted-foreground group-hover:text-primary/50 transition-colors" />
                   </PanelResizeHandle>
                   <Panel defaultSize={30} minSize={15}>
-                    <Card className="h-full flex flex-col">
+                    <Card variant="subpanel" className="h-full flex flex-col">
                       <ToolHistoryPanel
                         serverId={activeServerId}
                         toolName={selectedTool.name}

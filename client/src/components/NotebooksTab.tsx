@@ -6,14 +6,14 @@ import { NotebookInputsPanel } from '@/components/NotebookInputsPanel';
 import { NotebookToolbar } from '@/components/NotebookToolbar';
 import { NotebookVariablesDrawer } from '@/components/NotebookVariablesDrawer';
 import { useCallTool, useTools } from '@/hooks/useApi';
-import type { CellExecution } from '@/lib/notebookTypes';
 import {
-  detectSecrets,
-  exportNotebook,
-  importToNotebook,
-  validateImport,
-  detectDestructiveTools,
+    detectDestructiveTools,
+    detectSecrets,
+    exportNotebook,
+    importToNotebook,
+    validateImport,
 } from '@/lib/notebookExport';
+import type { CellExecution } from '@/lib/notebookTypes';
 import { buildContext, resolveTemplates } from '@/lib/templateEngine';
 import { downloadAsFile, parseMcpResult } from '@/lib/utils';
 import { useNotebookStore } from '@/stores/notebookStore';
@@ -21,9 +21,9 @@ import { useServersStore } from '@/stores/serversStore';
 import { BookOpen, Wrench } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Panel,
-  PanelGroup,
-  PanelResizeHandle,
+    Panel,
+    PanelGroup,
+    PanelResizeHandle,
 } from 'react-resizable-panels';
 
 export function NotebooksTab() {
@@ -456,7 +456,7 @@ export function NotebooksTab() {
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col p-2.5 gap-2">
       <NotebookToolbar
         onRunAll={handleRunAll}
         onExport={handleExport}
@@ -467,7 +467,7 @@ export function NotebooksTab() {
 
       {showInputs && <NotebookInputsPanel />}
 
-      <div className="flex-1 min-h-0 flex">
+      <div className="flex-1 min-h-0 flex rounded-xl border border-border/60 bg-card/70 overflow-hidden">
         <PanelGroup direction="horizontal" className="flex-1">
           {/* Cell List */}
           <Panel defaultSize={25} minSize={15} maxSize={40}>

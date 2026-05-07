@@ -118,9 +118,9 @@ export function PromptsTab() {
   }
 
   return (
-    <div className="flex h-full gap-4 p-4">
+    <div className="flex h-full gap-2 p-2.5">
       {/* Prompts List */}
-      <Card className="w-80 flex flex-col flex-shrink-0">
+      <Card variant="panel" className="w-80 flex flex-col flex-shrink-0">
         <CardHeader className="pb-3 flex-shrink-0">
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg flex items-center gap-2">
@@ -166,10 +166,10 @@ export function PromptsTab() {
                   <div
                     key={prompt.name}
                     className={cn(
-                      'p-3 rounded-lg border cursor-pointer transition-colors',
+                      'p-3 rounded-lg border cursor-pointer transition-all',
                       selectedPrompt?.name === prompt.name
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border hover:border-primary/50 hover:bg-muted/50'
+                        ? 'border-primary/60 bg-primary/10'
+                        : 'border-border/70 hover:border-primary/50 hover:bg-muted/35'
                     )}
                     onClick={() => setSelectedPrompt(prompt)}
                   >
@@ -210,7 +210,7 @@ export function PromptsTab() {
         <PanelGroup direction="vertical" className="h-full">
           {/* Arguments Form */}
           <Panel defaultSize={35} minSize={15}>
-            <Card className="h-full flex flex-col">
+            <Card variant="panel" className="h-full flex flex-col">
               <CardHeader className="pb-3 flex-shrink-0">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-lg">
@@ -290,7 +290,7 @@ export function PromptsTab() {
 
           {/* Results Panel */}
           <Panel defaultSize={65} minSize={20}>
-            <Card className="h-full flex flex-col">
+            <Card variant="panel" className="h-full flex flex-col">
               <CardHeader className="pb-3 flex-shrink-0">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-lg flex items-center gap-2">

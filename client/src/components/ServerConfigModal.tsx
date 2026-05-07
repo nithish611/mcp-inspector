@@ -141,7 +141,7 @@ export function ServerConfigModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-w-xl border-border/70 bg-card/95">
         <DialogHeader>
           <DialogTitle>{isEditing ? 'Edit Server' : 'Add New Server'}</DialogTitle>
           <DialogDescription>
@@ -151,23 +151,26 @@ export function ServerConfigModal({
 
         <div className="space-y-4 py-4">
           {/* Server Name */}
-          <div className="space-y-2">
+          <div className="space-y-2 rounded-lg border border-border/70 bg-muted/20 p-3">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Step 1</Label>
             <Label htmlFor="name">Server Name</Label>
             <Input
               id="name"
               placeholder="My MCP Server"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              className="bg-background/70"
             />
           </div>
 
           {/* Transport Type */}
-          <div className="space-y-2">
+          <div className="space-y-2 rounded-lg border border-border/70 bg-muted/20 p-3">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Step 2</Label>
             <Label>Transport Type</Label>
             <div className="grid grid-cols-2 gap-2">
               <Button
                 type="button"
-                variant={transportType === 'streamable-http' ? 'default' : 'outline'}
+                variant={transportType === 'streamable-http' ? 'default' : 'panel'}
                 className="flex items-center gap-2"
                 onClick={() => handleTransportTypeChange('streamable-http')}
               >
@@ -176,7 +179,7 @@ export function ServerConfigModal({
               </Button>
               <Button
                 type="button"
-                variant={transportType === 'stdio' ? 'default' : 'outline'}
+                variant={transportType === 'stdio' ? 'default' : 'panel'}
                 className="flex items-center gap-2"
                 onClick={() => handleTransportTypeChange('stdio')}
               >
@@ -188,7 +191,8 @@ export function ServerConfigModal({
 
           {/* STDIO Configuration */}
           {transportType === 'stdio' && (
-            <>
+            <div className="space-y-3 rounded-lg border border-border/70 bg-muted/20 p-3">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">Step 3</Label>
               <div className="space-y-2">
                 <Label htmlFor="command">Command</Label>
                 <Input
@@ -196,6 +200,7 @@ export function ServerConfigModal({
                   placeholder="npx -y @modelcontextprotocol/server-filesystem"
                   value={command}
                   onChange={(e) => setCommand(e.target.value)}
+                  className="bg-background/70"
                 />
               </div>
 
@@ -206,6 +211,7 @@ export function ServerConfigModal({
                   placeholder="/path/to/directory"
                   value={args}
                   onChange={(e) => setArgs(e.target.value)}
+                  className="bg-background/70"
                 />
               </div>
 
@@ -217,14 +223,16 @@ export function ServerConfigModal({
                   value={envVars}
                   onChange={(e) => setEnvVars(e.target.value)}
                   rows={3}
+                  className="bg-background/70"
                 />
               </div>
-            </>
+            </div>
           )}
 
           {/* HTTP Configuration */}
           {transportType !== 'stdio' && (
-            <>
+            <div className="space-y-3 rounded-lg border border-border/70 bg-muted/20 p-3">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">Step 3</Label>
               <div className="space-y-2">
                 <Label htmlFor="url">Server URL</Label>
                 <Input
@@ -232,6 +240,7 @@ export function ServerConfigModal({
                   placeholder="https://mcp.example.com/server"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
+                  className="bg-background/70"
                 />
               </div>
 
@@ -243,11 +252,12 @@ export function ServerConfigModal({
                   value={headers}
                   onChange={(e) => setHeaders(e.target.value)}
                   rows={3}
+                  className="bg-background/70"
                 />
               </div>
 
               {/* OAuth Settings */}
-              <div className={`rounded-lg border-2 transition-colors ${oauthEnabled ? 'border-primary bg-primary/5' : 'border-border'}`}>
+              <div className={`rounded-lg border transition-colors ${oauthEnabled ? 'border-primary/50 bg-primary/10' : 'border-border/70 bg-background/30'}`}>
                 <button
                   type="button"
                   className="w-full flex items-center justify-between p-4 cursor-pointer"
@@ -288,13 +298,13 @@ export function ServerConfigModal({
                       {showOAuthSettings ? 'Hide details' : 'Show details'}
                     </button>
                     {showOAuthSettings && (
-                      <div className="mt-3 p-3 rounded-md bg-muted/50 text-sm text-muted-foreground space-y-2">
+                      <div className="mt-3 p-3 rounded-md bg-muted/40 text-sm text-muted-foreground space-y-2 border border-border/60">
                         <p>
                           OAuth settings will be automatically discovered from the server's
                           metadata. The client will handle Dynamic Client Registration (DCR)
                           and PKCE automatically.
                         </p>
-                        <div className="flex items-center gap-2 text-xs font-mono bg-background rounded px-2 py-1.5 border">
+                        <div className="flex items-center gap-2 text-xs font-mono bg-background/80 rounded px-2 py-1.5 border border-border/70">
                           <span className="text-muted-foreground">Redirect URI:</span>
                           <span className="truncate">{window.location.origin}/oauth/callback</span>
                         </div>
@@ -303,7 +313,7 @@ export function ServerConfigModal({
                   </div>
                 )}
               </div>
-            </>
+            </div>
           )}
         </div>
 

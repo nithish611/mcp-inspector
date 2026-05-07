@@ -77,10 +77,10 @@ export function ServerCard({
   return (
     <div
       className={cn(
-        'relative rounded-lg border p-3 cursor-pointer transition-all',
+        'relative rounded-xl border p-3 cursor-pointer transition-all duration-150 bg-card/55',
         isActive
-          ? 'border-primary bg-primary/5 ring-1 ring-primary'
-          : 'border-border hover:border-primary/50 hover:bg-muted/50'
+          ? 'border-primary/70 bg-primary/10 ring-1 ring-primary/40 shadow-[0_16px_34px_-24px_hsl(var(--primary)/0.9)]'
+          : 'border-border/70 hover:border-primary/50 hover:bg-muted/40'
       )}
       onClick={onSelect}
     >
@@ -93,7 +93,7 @@ export function ServerCard({
           <div className="flex items-center gap-2">
             <span className="font-medium text-sm truncate">{server.name}</span>
             {server.status.connected && server.status.serverInfo && (
-              <Badge variant="outline" className="text-xs px-1.5 py-0">
+              <Badge variant="outline" className="text-xs px-1.5 py-0 border-border/60 bg-muted/20">
                 v{server.status.serverInfo.version}
               </Badge>
             )}
@@ -106,9 +106,9 @@ export function ServerCard({
 
           {/* Transport type and status */}
           <div className="flex items-center gap-2 mt-2">
-            <Badge variant="secondary" className="text-xs px-1.5 py-0 gap-1">
+            <Badge variant="secondary" className="text-xs px-1.5 py-0 gap-1 bg-muted/35">
               {getTransportIcon()}
-              {server.config.type}
+              {server.config.type === 'streamable-http' ? 'http' : server.config.type}
             </Badge>
             <span className="text-xs text-muted-foreground">{getStatusText()}</span>
           </div>
@@ -141,7 +141,7 @@ export function ServerCard({
         <div className="flex items-center gap-1 flex-shrink-0">
           {server.status.connected ? (
             <Button
-              variant="ghost"
+              variant="panel"
               size="icon"
               className="h-7 w-7"
               onClick={(e) => {
@@ -154,7 +154,7 @@ export function ServerCard({
             </Button>
           ) : (
             <Button
-              variant="ghost"
+              variant="panel"
               size="icon"
               className="h-7 w-7"
               onClick={(e) => {
@@ -175,7 +175,7 @@ export function ServerCard({
           {/* More menu */}
           <div className="relative">
             <Button
-              variant="ghost"
+              variant="panel"
               size="icon"
               className="h-7 w-7"
               onClick={(e) => {

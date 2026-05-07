@@ -218,9 +218,9 @@ export function LogsTab({ onClearLogs }: LogsTabProps) {
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col rounded-xl border border-border/60 bg-card/70 overflow-hidden">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-border flex-shrink-0">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border/60 bg-muted/20 flex-shrink-0">
         <div className="flex items-center gap-3">
           <Activity className="h-4 w-4 text-muted-foreground" />
           <span className="font-medium text-sm">HTTP Logs</span>
@@ -325,7 +325,7 @@ export function LogsTab({ onClearLogs }: LogsTabProps) {
       </div>
 
       {/* Method Category Chips */}
-      <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border flex-shrink-0 bg-muted/20">
+      <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border/60 flex-shrink-0 bg-muted/20">
         <Tag className="h-3.5 w-3.5 text-muted-foreground" />
         <div className="flex items-center gap-1">
           {categoryOptions.map((option) => {

@@ -139,10 +139,18 @@ export function useTools(serverId?: string) {
 
 export function useCallTool() {
   return useMutation({
-    mutationFn: async (params: { serverId: string; name: string; arguments?: Record<string, unknown>; personaEmail?: string }) => {
+    mutationFn: async (params: {
+      serverId: string
+      name: string
+      arguments?: Record<string, unknown>
+      personaEmail?: string
+      signal?: AbortSignal
+    }) => {
+      const { signal, ...bodyParams } = params
       return fetchApi<unknown>('/tools/call', {
         method: 'POST',
-        body: JSON.stringify(params),
+        body: JSON.stringify(bodyParams),
+        signal,
       })
     },
   })

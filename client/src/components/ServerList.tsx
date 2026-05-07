@@ -75,13 +75,13 @@ export function ServerList({
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-card/40">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b">
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/60 bg-muted/20">
         <div className="flex items-center gap-2">
-          <ServerIcon className="h-5 w-5 text-muted-foreground" />
-          <h2 className="font-semibold">Servers</h2>
-          <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+          <ServerIcon className="h-4 w-4 text-muted-foreground" />
+          <h2 className="font-semibold text-sm tracking-tight">Servers</h2>
+          <span className="text-[11px] text-muted-foreground bg-muted/70 border border-border/60 px-1.5 py-0.5 rounded-full">
             {filteredServers.length}{searchQuery && `/${servers.length}`}
           </span>
         </div>
@@ -89,7 +89,7 @@ export function ServerList({
           {onCollapseSidebar && (
             <Button
               type="button"
-              variant="ghost"
+              variant="panel"
               size="icon"
               className="h-8 w-8 shrink-0 text-muted-foreground"
               onClick={onCollapseSidebar}
@@ -108,14 +108,14 @@ export function ServerList({
 
       {/* Search */}
       {servers.length > 0 && (
-        <div className="px-2.5 py-1.5 border-b">
+        <div className="px-2.5 py-2 border-b border-border/60">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               placeholder="Search servers..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-8 pl-8 pr-8 text-sm"
+              className="h-8 pl-8 pr-8 text-sm bg-muted/25 border-border/70"
             />
             {searchQuery && (
               <button
@@ -131,7 +131,7 @@ export function ServerList({
 
       {/* Server List */}
       <ScrollArea className="flex-1">
-        <div className="p-2 space-y-1.5">
+        <div className="p-2.5 space-y-2">
           {servers.length === 0 ? (
             <div className="text-center py-8">
               <ServerIcon className="h-12 w-12 mx-auto text-muted-foreground/50 mb-3" />

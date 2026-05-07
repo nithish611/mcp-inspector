@@ -351,22 +351,22 @@ export function Layout() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div className="h-screen flex flex-col bg-background/70 backdrop-blur-sm">
       {/* Header */}
-      <header className="h-10 border-b border-border flex items-center justify-between gap-2 px-2.5 flex-shrink-0 min-h-0">
+      <header className="h-12 border-b border-border/70 bg-card/70 flex items-center justify-between gap-3 px-3.5 flex-shrink-0 min-h-0 backdrop-blur supports-[backdrop-filter]:bg-card/55">
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 shrink-0">
-            <div className="h-6 w-6 rounded-md bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-[0_10px_30px_-16px_rgba(99,102,241,1)]">
               <span className="text-white font-bold text-[10px] leading-none">MCP</span>
             </div>
             <div className="min-w-0 flex items-baseline gap-1.5">
               <h1
-                className="text-sm font-semibold leading-none tracking-tight"
+                className="text-sm font-semibold leading-none tracking-tight text-foreground/95"
                 title="Model Context Protocol Inspector"
               >
                 MCP Client
               </h1>
-              <span className="text-[10px] text-muted-foreground leading-none hidden sm:inline border-l border-border pl-1.5 max-w-[14rem] truncate">
+              <span className="text-[10px] text-muted-foreground leading-none hidden sm:inline border-l border-border/70 pl-1.5 max-w-[14rem] truncate">
                 Inspector
               </span>
             </div>
@@ -374,7 +374,7 @@ export function Layout() {
 
           {/* Connected servers indicator — inline, compact */}
           {connectedServers.length > 0 && (
-            <div className="flex items-center gap-1.5 min-w-0 ml-1 border-l border-border pl-2">
+            <div className="flex items-center gap-1.5 min-w-0 ml-1 border-l border-border/60 pl-2">
               <Badge
                 variant="success"
                 className="gap-0.5 h-5 px-1.5 py-0 text-[10px] font-medium shrink-0"
@@ -387,7 +387,7 @@ export function Layout() {
               {activeServer?.status.connected && activeServer.status.serverInfo && (
                 <Badge
                   variant="outline"
-                  className="h-5 px-1.5 py-0 text-[10px] font-normal max-w-[min(12rem,28vw)] truncate"
+                  className="h-5 px-1.5 py-0 text-[10px] font-normal max-w-[min(12rem,28vw)] truncate border-border/70 bg-muted/25"
                   title={`Active: ${activeServer.status.serverInfo.name}`}
                 >
                   {activeServer.status.serverInfo.name}
@@ -397,10 +397,10 @@ export function Layout() {
           )}
         </div>
 
-        <div className="flex items-center gap-0.5 shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
           <div className="relative">
             <Button
-              variant="ghost"
+              variant="panel"
               size="icon"
               onClick={() => setShowShortcuts(!showShortcuts)}
               className="h-8 w-8"
@@ -453,7 +453,7 @@ export function Layout() {
             )}
           </div>
           <Button
-            variant="ghost"
+            variant="panel"
             size="icon"
             className="h-8 w-8"
             title="Refresh OAuth tokens"
@@ -463,7 +463,7 @@ export function Layout() {
             <RefreshCw className={cn('h-3.5 w-3.5', oauthRefreshMutation.isPending && 'animate-spin')} />
           </Button>
           <Button
-            variant="ghost"
+            variant="panel"
             size="icon"
             className="h-8 w-8"
             title="Clear all OAuth tokens"
@@ -473,7 +473,7 @@ export function Layout() {
             <Eraser className="h-3.5 w-3.5" />
           </Button>
           <Button
-            variant="ghost"
+            variant="panel"
             size="icon"
             onClick={toggleTheme}
             className="h-8 w-8"
@@ -486,7 +486,7 @@ export function Layout() {
             )}
           </Button>
           <Button
-            variant="ghost"
+            variant="panel"
             size="icon"
             className="h-8 w-8"
             title="View on GitHub"
@@ -500,7 +500,7 @@ export function Layout() {
       </header>
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex-1 flex overflow-hidden relative p-2 gap-2">
         {serversPanelCollapsed && (
           <Button
             type="button"
@@ -527,7 +527,7 @@ export function Layout() {
             onCollapse={() => setServersPanelCollapsed(true)}
             onExpand={() => setServersPanelCollapsed(false)}
           >
-            <div className="h-full border-r border-border">
+            <div className="h-full rounded-xl border border-border/60 bg-card/60 backdrop-blur overflow-hidden">
               <ServerList
                 onConnect={handleConnect}
                 onDisconnect={handleDisconnect}
@@ -538,7 +538,7 @@ export function Layout() {
 
           <PanelResizeHandle
             className={cn(
-              'w-1 bg-border hover:bg-primary/50 transition-colors',
+              'w-1 rounded-full bg-border/60 hover:bg-primary/60 transition-colors',
               serversPanelCollapsed && 'hidden'
             )}
           />
@@ -551,39 +551,39 @@ export function Layout() {
                 onValueChange={setActiveTab}
                 className="flex-1 flex flex-col overflow-hidden"
               >
-                <div className="border-b border-border px-3">
-                  <TabsList className="h-10 bg-transparent gap-0.5">
+                <div className="px-2 pt-2">
+                  <TabsList className="h-10 bg-muted/25 border border-border/70 gap-1 rounded-xl p-1">
                     <TabsTrigger
                       value="tools"
-                      className="data-[state=active]:bg-muted"
+                      className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-lg"
                     >
                       <Wrench className="h-4 w-4 mr-2" />
                       Tools
                     </TabsTrigger>
                     <TabsTrigger
                       value="resources"
-                      className="data-[state=active]:bg-muted"
+                      className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-lg"
                     >
                       <FolderOpen className="h-4 w-4 mr-2" />
                       Resources
                     </TabsTrigger>
                     <TabsTrigger
                       value="prompts"
-                      className="data-[state=active]:bg-muted"
+                      className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-lg"
                     >
                       <MessageSquare className="h-4 w-4 mr-2" />
                       Prompts
                     </TabsTrigger>
                     <TabsTrigger
                       value="notebooks"
-                      className="data-[state=active]:bg-muted"
+                      className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-lg"
                     >
                       <BookOpen className="h-4 w-4 mr-2" />
                       Notebooks
                     </TabsTrigger>
                     <TabsTrigger
                       value="logs"
-                      className="data-[state=active]:bg-muted"
+                      className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-lg"
                     >
                       <Activity className="h-4 w-4 mr-2" />
                       Logs
