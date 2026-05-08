@@ -263,6 +263,7 @@ export function ToolsTab() {
   const [showHistory, setShowHistory] = useState(false)
   const [confirmDestructive, setConfirmDestructive] = useState(false)
   const [toolFilter, setToolFilter] = useState<ToolFilter>('all')
+  const [latencyMs, setLatencyMs] = useState<number | null>(null)
   const executeAbortControllerRef = useRef<AbortController | null>(null)
 
   const selectedToolResourceUri = selectedTool ? getToolUiResourceUri(selectedTool) : undefined
@@ -302,6 +303,7 @@ export function ToolsTab() {
     setToolFilter('all')
     setAppHtml(null)
     setResultViewMode('json')
+    setLatencyMs(null)
   }, [activeServerId])
 
   // Refetch tools when connected
@@ -471,6 +473,7 @@ export function ToolsTab() {
         personaEmail: persona?.email,
         signal: abortController.signal,
       })
+      setLatencyMs(Date.now() - startTime)
       setToolResult(result)
       const parsed = parseMcpResult(result)
       setParsedResult(parsed)
@@ -527,6 +530,7 @@ export function ToolsTab() {
         }
       }
       setParsedResult(parsedError)
+      setLatencyMs(Date.now() - startTime)
 
       let errorArgs: Record<string, unknown> = {}
       try { errorArgs = inputMode === 'json' ? JSON.parse(toolArgs) : formValues } catch { /* ignore */ }
@@ -1314,6 +1318,11 @@ export function ToolsTab() {
                         Result
                         {(callToolMutation.isPending || isLoadingAppHtml) && (
                           <Loader2 className="h-4 w-4 animate-spin" />
+                        )}
+                        {latencyMs !== null && !callToolMutation.isPending && (
+                          <span className="text-xs font-normal text-muted-foreground border border-border rounded-md px-2 py-0.5">
+                            {latencyMs >= 1000 ? `${(latencyMs / 1000).toFixed(2)}s` : `${latencyMs}ms`}
+                          </span>
                         )}
                       </CardTitle>
                       <div className="flex items-center gap-2">
