@@ -1,8 +1,10 @@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import type { Server } from '@/stores/serversStore'
 import {
+    Copy,
     Globe,
     Loader2,
     MoreVertical,
@@ -74,6 +76,17 @@ export function ServerCard({
     return server.config.url || 'No URL'
   }
 
+  const handleCopyServerUrl = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (server.config.type === 'stdio' || !server.config.url) return
+    try {
+      await navigator.clipboard.writeText(server.config.url)
+      toast('Server URL copied')
+    } catch {
+      toast('Failed to copy server URL')
+    }
+  }
+
   return (
     <div
       className={cn(
@@ -100,9 +113,21 @@ export function ServerCard({
           </div>
 
           {/* URL/Command preview */}
-          <p className="text-xs text-muted-foreground truncate mt-0.5">
-            {getServerUrl()}
-          </p>
+          <div className="mt-0.5 flex items-center gap-1.5">
+            <p className="text-xs text-muted-foreground truncate flex-1 min-w-0">
+              {getServerUrl()}
+            </p>
+            {server.config.type !== 'stdio' && server.config.url && (
+              <button
+                className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                onClick={handleCopyServerUrl}
+                title="Copy server URL"
+                aria-label="Copy server URL"
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
 
           {/* Transport type and status */}
           <div className="flex items-center gap-2 mt-2">

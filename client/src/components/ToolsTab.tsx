@@ -59,6 +59,7 @@ function getToolUiResourceUri(tool: Tool): string | undefined {
 }
 
 type ToolIntent = 'read' | 'write' | 'destructive'
+type ToolFilter = 'all' | 'ui' | 'normal' | 'read' | 'write'
 
 function getToolIntent(tool: Tool): ToolIntent {
   const annotations = tool.annotations
@@ -261,6 +262,7 @@ export function ToolsTab() {
   const [expandedFieldKey, setExpandedFieldKey] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
   const [confirmDestructive, setConfirmDestructive] = useState(false)
+  const [toolFilter, setToolFilter] = useState<ToolFilter>('all')
   const executeAbortControllerRef = useRef<AbortController | null>(null)
 
   const selectedToolResourceUri = selectedTool ? getToolUiResourceUri(selectedTool) : undefined
@@ -268,13 +270,28 @@ export function ToolsTab() {
 
   // Filter tools based on search query
   const filteredTools = useMemo(() => {
-    if (!tools || !toolSearchQuery.trim()) return tools
-    const query = toolSearchQuery.toLowerCase()
-    return tools.filter(tool =>
-      tool.name.toLowerCase().includes(query) ||
-      tool.description?.toLowerCase().includes(query)
-    )
-  }, [tools, toolSearchQuery])
+    if (!tools) return tools
+    const query = toolSearchQuery.trim().toLowerCase()
+
+    return tools.filter((tool) => {
+      const matchesSearch =
+        !query ||
+        tool.name.toLowerCase().includes(query) ||
+        tool.description?.toLowerCase().includes(query)
+
+      const isUiTool = !!getToolUiResourceUri(tool)
+      const intent = getToolIntent(tool)
+
+      const matchesFilter =
+        toolFilter === 'all' ||
+        (toolFilter === 'ui' && isUiTool) ||
+        (toolFilter === 'normal' && !isUiTool) ||
+        (toolFilter === 'read' && intent === 'read') ||
+        (toolFilter === 'write' && intent === 'write')
+
+      return matchesSearch && matchesFilter
+    })
+  }, [tools, toolSearchQuery, toolFilter])
 
   // Reset selected tool when server changes
   useEffect(() => {
@@ -282,6 +299,7 @@ export function ToolsTab() {
     setToolResult(null)
     setParsedResult(null)
     setToolSearchQuery('')
+    setToolFilter('all')
     setAppHtml(null)
     setResultViewMode('json')
   }, [activeServerId])
@@ -855,22 +873,46 @@ export function ToolsTab() {
               </div>
               {/* Search Input */}
               {tools && tools.length > 0 && (
-                <div className="relative mt-2">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                  <Input
-                    placeholder="Search tools..."
-                    value={toolSearchQuery}
-                    onChange={(e) => setToolSearchQuery(e.target.value)}
-                    className="h-8 pl-8 pr-8 text-sm"
-                  />
-                  {toolSearchQuery && (
-                    <button
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2"
-                      onClick={() => setToolSearchQuery('')}
-                    >
-                      <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
-                    </button>
-                  )}
+                <div className="mt-2 space-y-2">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Search tools..."
+                      value={toolSearchQuery}
+                      onChange={(e) => setToolSearchQuery(e.target.value)}
+                      className="h-8 pl-8 pr-8 text-sm"
+                    />
+                    {toolSearchQuery && (
+                      <button
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2"
+                        onClick={() => setToolSearchQuery('')}
+                      >
+                        <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-5 gap-1 rounded-lg border border-border/70 bg-muted/20 p-1">
+                    {([
+                      { key: 'all', label: 'All' },
+                      { key: 'ui', label: 'UI' },
+                      { key: 'normal', label: 'Normal' },
+                      { key: 'read', label: 'Read' },
+                      { key: 'write', label: 'Write' },
+                    ] as Array<{ key: ToolFilter; label: string }>).map((filter) => (
+                      <button
+                        key={filter.key}
+                        className={cn(
+                          'px-2 py-1.5 text-xs rounded-md border transition-colors whitespace-nowrap text-center font-medium',
+                          toolFilter === filter.key
+                            ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                            : 'border-transparent bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                        )}
+                        onClick={() => setToolFilter(filter.key)}
+                      >
+                        {filter.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </CardHeader>
@@ -910,7 +952,7 @@ export function ToolsTab() {
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <p className="font-medium font-mono text-sm truncate">
                                 {getToolTitle(tool)}
                               </p>
@@ -918,7 +960,7 @@ export function ToolsTab() {
                                 const intent = getToolIntent(tool)
                                 if (intent === 'read') {
                                   return (
-                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 flex-shrink-0 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 flex-shrink-0 bg-sky-500/15 text-sky-400 border-transparent">
                                       <Eye className="h-2.5 w-2.5 mr-0.5" />
                                       READ
                                     </Badge>
@@ -940,7 +982,7 @@ export function ToolsTab() {
                                 )
                               })()}
                               {getToolUiResourceUri(tool) && (
-                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 flex-shrink-0 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 flex-shrink-0 bg-violet-500/15 text-violet-300 border-transparent">
                                   <Layout className="h-2.5 w-2.5 mr-0.5" />
                                   UI
                                 </Badge>
