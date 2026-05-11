@@ -1,5 +1,9 @@
+import { BatchExecution } from '@/components/BatchExecution'
+import { EnvironmentManager } from '@/components/EnvironmentManager'
+import { ExecutionStatusBar } from '@/components/ExecutionStatusBar'
 import { LogsTab } from '@/components/LogsTab'
 import { NotebooksTab } from '@/components/NotebooksTab'
+import { PerformanceDashboard } from '@/components/PerformanceDashboard'
 import { PromptsTab } from '@/components/PromptsTab'
 import { ResourcesTab } from '@/components/ResourcesTab'
 import { ServerList } from '@/components/ServerList'
@@ -17,26 +21,29 @@ import { useLogsStore } from '@/stores/logsStore'
 import { useServersStore } from '@/stores/serversStore'
 import { useThemeStore } from '@/stores/themeStore'
 import {
-    Activity,
-    BookOpen,
-    ChevronRight,
-    Eraser,
-    FolderOpen,
-    Github,
-    Keyboard,
-    MessageSquare,
-    Moon,
-    RefreshCw,
-    Server as ServerIcon,
-    Sun,
-    Wrench,
+  Activity,
+  BarChart3,
+  BookOpen,
+  ChevronRight,
+  Eraser,
+  FolderOpen,
+  Github,
+  Keyboard,
+  Layers,
+  MessageSquare,
+  Moon,
+  RefreshCw,
+  Server as ServerIcon,
+  Sun,
+  Variable,
+  Wrench,
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-    type ImperativePanelHandle,
-    Panel,
-    PanelGroup,
-    PanelResizeHandle,
+  type ImperativePanelHandle,
+  Panel,
+  PanelGroup,
+  PanelResizeHandle,
 } from 'react-resizable-panels'
 
 export function Layout() {
@@ -397,7 +404,8 @@ export function Layout() {
           )}
         </div>
 
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <ExecutionStatusBar />
           <div className="relative">
             <Button
               variant="panel"
@@ -582,6 +590,27 @@ export function Layout() {
                       Notebooks
                     </TabsTrigger>
                     <TabsTrigger
+                      value="batch"
+                      className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-lg"
+                    >
+                      <Layers className="h-4 w-4 mr-2" />
+                      Batch
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="environments"
+                      className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-lg"
+                    >
+                      <Variable className="h-4 w-4 mr-2" />
+                      Env
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="performance"
+                      className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-lg"
+                    >
+                      <BarChart3 className="h-4 w-4 mr-2" />
+                      Performance
+                    </TabsTrigger>
+                    <TabsTrigger
                       value="logs"
                       className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-lg"
                     >
@@ -607,6 +636,15 @@ export function Layout() {
                 </TabsContent>
                 <TabsContent value="notebooks" className="flex-1 overflow-hidden m-0">
                   <NotebooksTab />
+                </TabsContent>
+                <TabsContent value="batch" className="flex-1 overflow-hidden m-0">
+                  <BatchExecution />
+                </TabsContent>
+                <TabsContent value="environments" className="flex-1 overflow-hidden m-0 p-2">
+                  <EnvironmentManager />
+                </TabsContent>
+                <TabsContent value="performance" className="flex-1 overflow-hidden m-0">
+                  <PerformanceDashboard />
                 </TabsContent>
                 <TabsContent value="logs" className="flex-1 overflow-hidden m-0">
                   <LogsTab onClearLogs={clearServerLogs} />

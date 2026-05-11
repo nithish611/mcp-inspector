@@ -16,6 +16,8 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { useCallTool, useClearPersona, useDeletePersonaEmail, useGeneratePayload, usePersonaEmails, useReadResource, useTokenExchange, useTools, type Tool } from '@/hooks/useApi'
 import { toast } from '@/lib/toast'
 import { cn, copyToClipboard, parseMcpResult, type ParsedMcpResult } from '@/lib/utils'
+import { useEnvironmentStore } from '@/stores/environmentStore'
+import { useExecutionStore } from '@/stores/executionStore'
 import { useHistoryStore } from '@/stores/historyStore'
 import { useServersStore } from '@/stores/serversStore'
 import {
@@ -32,6 +34,8 @@ import {
   Layout,
   Loader2,
   Pencil,
+  Pin,
+  PinOff,
   Play,
   RefreshCw,
   Search,
@@ -239,11 +243,13 @@ export function ToolsTab() {
   const deletePersonaEmailMutation = useDeletePersonaEmail()
   const { data: cachedEmails } = usePersonaEmails(activeServerId || undefined)
   const { setPersona, clearPersona } = useServersStore()
+  const executions = useExecutionStore((s) => s.executions)
 
   const [personaEmail, setPersonaEmail] = useState('')
   const [showPersonaDropdown, setShowPersonaDropdown] = useState(false)
   const personaDropdownRef = useRef<HTMLDivElement>(null)
   const [activeFieldSuggestion, setActiveFieldSuggestion] = useState<string | null>(null)
+  const [suggestionHighlightIndex, setSuggestionHighlightIndex] = useState(-1)
   const fieldSuggestionRef = useRef<HTMLDivElement>(null)
 
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null)
@@ -264,6 +270,21 @@ export function ToolsTab() {
   const [confirmDestructive, setConfirmDestructive] = useState(false)
   const [toolFilter, setToolFilter] = useState<ToolFilter>('all')
   const [latencyMs, setLatencyMs] = useState<number | null>(null)
+  const [executingToolName, setExecutingToolName] = useState<string | null>(null)
+  const [pinnedTools, setPinnedTools] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('mcp-pinned-tools')
+      return stored ? JSON.parse(stored) : []
+    } catch { return [] }
+  })
+  const togglePinTool = useCallback((toolName: string) => {
+    setPinnedTools((prev) => {
+      const next = prev.includes(toolName) ? prev.filter((t) => t !== toolName) : [...prev, toolName]
+      localStorage.setItem('mcp-pinned-tools', JSON.stringify(next))
+      return next
+    })
+  }, [])
+
   const executeAbortControllerRef = useRef<AbortController | null>(null)
 
   const selectedToolResourceUri = selectedTool ? getToolUiResourceUri(selectedTool) : undefined
@@ -274,7 +295,7 @@ export function ToolsTab() {
     if (!tools) return tools
     const query = toolSearchQuery.trim().toLowerCase()
 
-    return tools.filter((tool) => {
+    const filtered = tools.filter((tool) => {
       const matchesSearch =
         !query ||
         tool.name.toLowerCase().includes(query) ||
@@ -292,7 +313,13 @@ export function ToolsTab() {
 
       return matchesSearch && matchesFilter
     })
-  }, [tools, toolSearchQuery, toolFilter])
+
+    return filtered.sort((a, b) => {
+      const aPinned = pinnedTools.includes(a.name) ? 0 : 1
+      const bPinned = pinnedTools.includes(b.name) ? 0 : 1
+      return aPinned - bPinned
+    })
+  }, [tools, toolSearchQuery, toolFilter, pinnedTools])
 
   // Reset selected tool when server changes
   useEffect(() => {
@@ -462,9 +489,19 @@ export function ToolsTab() {
     const startTime = Date.now()
     const abortController = new AbortController()
     executeAbortControllerRef.current = abortController
+    setExecutingToolName(selectedTool.name)
+
+    const execId = useExecutionStore.getState().addExecution({
+      toolName: selectedTool.name,
+      serverId: activeServerId,
+      status: 'running',
+      startTime,
+    })
 
     try {
-      const args = inputMode === 'json' ? JSON.parse(toolArgs) : formValues
+      const substituteVariables = useEnvironmentStore.getState().substituteVariables
+      const rawArgs = inputMode === 'json' ? JSON.parse(toolArgs) : formValues
+      const args = JSON.parse(substituteVariables(JSON.stringify(rawArgs)))
       const persona = activeServer?.activePersona
       const result = await callToolMutation.mutateAsync({
         serverId: activeServerId,
@@ -473,7 +510,9 @@ export function ToolsTab() {
         personaEmail: persona?.email,
         signal: abortController.signal,
       })
-      setLatencyMs(Date.now() - startTime)
+      const elapsed = Date.now() - startTime
+      setLatencyMs(elapsed)
+      useExecutionStore.getState().updateExecution(execId, { status: 'success', endTime: Date.now(), durationMs: elapsed })
       setToolResult(result)
       const parsed = parseMcpResult(result)
       setParsedResult(parsed)
@@ -531,6 +570,12 @@ export function ToolsTab() {
       }
       setParsedResult(parsedError)
       setLatencyMs(Date.now() - startTime)
+      useExecutionStore.getState().updateExecution(execId, {
+        status: 'error',
+        endTime: Date.now(),
+        durationMs: Date.now() - startTime,
+        error: (parsedError.data as any)?.error || 'Failed',
+      })
 
       let errorArgs: Record<string, unknown> = {}
       try { errorArgs = inputMode === 'json' ? JSON.parse(toolArgs) : formValues } catch { /* ignore */ }
@@ -547,6 +592,7 @@ export function ToolsTab() {
       if (executeAbortControllerRef.current === abortController) {
         executeAbortControllerRef.current = null
       }
+      setExecutingToolName(null)
     }
   }, [selectedTool, activeServerId, activeServer?.activePersona, confirmDestructive, inputMode, toolArgs, formValues, callToolMutation, fetchAppHtml])
 
@@ -656,7 +702,7 @@ export function ToolsTab() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        if (selectedTool && !callToolMutation.isPending) {
+        if (selectedTool && executingToolName !== selectedTool.name) {
           e.preventDefault()
           handleExecuteTool()
         }
@@ -664,7 +710,7 @@ export function ToolsTab() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedTool, callToolMutation.isPending, handleExecuteTool])
+  }, [selectedTool, executingToolName, handleExecuteTool])
 
   const handleCopyResult = () => {
     if (parsedResult) {
@@ -943,17 +989,59 @@ export function ToolsTab() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {filteredTools?.map((tool) => (
+                    {filteredTools?.map((tool) => {
+                      const toolExec = activeServerId ? executions.find(
+                        (e) => e.toolName === tool.name && e.serverId === activeServerId && e.status === 'running'
+                      ) : null
+                      const lastExec = activeServerId ? executions.find(
+                        (e) => e.toolName === tool.name && e.serverId === activeServerId && e.status !== 'running'
+                      ) : null
+                      return (
                       <div
                         key={tool.name}
                         className={cn(
-                          'p-2.5 rounded-lg border cursor-pointer transition-all',
+                          'p-2.5 rounded-lg border cursor-pointer transition-all relative group',
                           selectedTool?.name === tool.name
                             ? 'border-primary/60 bg-primary/10 shadow-[0_12px_30px_-22px_hsl(var(--primary)/0.9)]'
-                            : 'border-border/70 hover:border-primary/50 hover:bg-muted/35'
+                            : toolExec
+                              ? 'border-primary/50 bg-primary/5'
+                              : pinnedTools.includes(tool.name)
+                                ? 'border-primary/50 bg-primary/15 hover:border-primary/60 hover:bg-primary/20'
+                                : 'border-border/70 hover:border-primary/50 hover:bg-muted/35'
                         )}
                         onClick={() => setSelectedTool(tool)}
                       >
+                        <div className="absolute top-2 right-2 flex items-center gap-1">
+                          {toolExec && (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                          )}
+                          {!toolExec && lastExec && (
+                            <div title={lastExec.durationMs ? `${lastExec.durationMs}ms` : ''}>
+                              {lastExec.status === 'success' ? (
+                                <div className="flex items-center gap-1">
+                                  {lastExec.durationMs && (
+                                    <span className="text-[9px] text-green-500">{lastExec.durationMs >= 1000 ? `${(lastExec.durationMs / 1000).toFixed(1)}s` : `${lastExec.durationMs}ms`}</span>
+                                  )}
+                                <div className="h-2.5 w-2.5 rounded-full bg-green-500" />
+                              </div>
+                            ) : (
+                              <div className="h-2.5 w-2.5 rounded-full bg-destructive" />
+                            )}
+                            </div>
+                          )}
+                          <button
+                            className={cn(
+                              'p-1 rounded-md transition-all',
+                              pinnedTools.includes(tool.name)
+                                ? 'text-primary bg-primary/15 border border-primary/30'
+                                : 'text-muted-foreground/50 opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-muted'
+                            )}
+                            title={pinnedTools.includes(tool.name) ? 'Unpin tool' : 'Pin tool'}
+                            onClick={(e) => { e.stopPropagation(); togglePinTool(tool.name) }}
+                          >
+                            {pinnedTools.includes(tool.name) ? <Pin className="h-4 w-4" /> : <PinOff className="h-4 w-4" />}
+                          </button>
+                        </div>
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
@@ -1050,7 +1138,8 @@ export function ToolsTab() {
                           </div>
                         )}
                       </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </ScrollArea>
@@ -1137,12 +1226,12 @@ export function ToolsTab() {
                           </Button>
                         )}
                         <Button
-                          onClick={callToolMutation.isPending ? handleCancelExecute : handleExecuteTool}
+                          onClick={executingToolName === selectedTool?.name ? handleCancelExecute : handleExecuteTool}
                           disabled={!selectedTool}
                           title="Execute (⌘+Enter)"
-                          variant={callToolMutation.isPending ? 'destructive' : 'default'}
+                          variant={executingToolName === selectedTool?.name ? 'destructive' : 'default'}
                         >
-                          {callToolMutation.isPending ? (
+                          {executingToolName === selectedTool?.name ? (
                             <>
                               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                               Cancel
@@ -1250,10 +1339,42 @@ export function ToolsTab() {
                                           onChange={(e) => {
                                             updateFormValue(key, e.target.value)
                                             setActiveFieldSuggestion(key)
+                                            setSuggestionHighlightIndex(-1)
                                           }}
-                                          onFocus={() => setActiveFieldSuggestion(key)}
+                                          onFocus={() => { setActiveFieldSuggestion(key); setSuggestionHighlightIndex(-1) }}
                                           onKeyDown={(e) => {
-                                            if (e.key === 'Escape') setActiveFieldSuggestion(null)
+                                            if (e.key === 'Escape') { setActiveFieldSuggestion(null); return }
+                                            if (activeFieldSuggestion !== key) return
+                                            const fieldSuggs = selectedTool ? getFieldSuggestions(selectedTool.name, key) : []
+                                            const curVal = (formValues[key] || '').toLowerCase()
+                                            const filteredSuggs = fieldSuggs.filter(s => s.toLowerCase().includes(curVal) && s !== formValues[key])
+                                            const eVars = useEnvironmentStore.getState().getActiveVariables()
+                                            const eKeys = Object.keys(eVars)
+                                            const showEnv = (formValues[key] || '').includes('{{') && eKeys.length > 0
+                                            const lBrace = (formValues[key] || '').lastIndexOf('{{')
+                                            const pVar = lBrace >= 0 ? (formValues[key] || '').slice(lBrace + 2) : ''
+                                            const filteredEnv = showEnv ? eKeys.filter(k => k.toLowerCase().includes(pVar.toLowerCase()) && !(formValues[key] || '').includes(`{{${k}}}`)) : []
+                                            const totalItems = filteredEnv.length + filteredSuggs.length
+                                            if (totalItems === 0) return
+                                            if (e.key === 'ArrowDown') {
+                                              e.preventDefault()
+                                              setSuggestionHighlightIndex(prev => prev < totalItems - 1 ? prev + 1 : 0)
+                                            } else if (e.key === 'ArrowUp') {
+                                              e.preventDefault()
+                                              setSuggestionHighlightIndex(prev => prev > 0 ? prev - 1 : totalItems - 1)
+                                            } else if (e.key === 'Enter' && suggestionHighlightIndex >= 0) {
+                                              e.preventDefault()
+                                              if (suggestionHighlightIndex < filteredEnv.length) {
+                                                const envKey = filteredEnv[suggestionHighlightIndex]
+                                                const val = formValues[key] || ''
+                                                const insertPos = val.lastIndexOf('{{')
+                                                updateFormValue(key, val.slice(0, insertPos) + `{{${envKey}}}`)
+                                              } else {
+                                                updateFormValue(key, filteredSuggs[suggestionHighlightIndex - filteredEnv.length])
+                                              }
+                                              setActiveFieldSuggestion(null)
+                                              setSuggestionHighlightIndex(-1)
+                                            }
                                           }}
                                           placeholder={`Enter ${key}`}
                                           autoComplete="off"
@@ -1261,27 +1382,96 @@ export function ToolsTab() {
                                           data-lpignore="true"
                                           data-1p-ignore="true"
                                         />
+                                        {/* Resolved variable preview */}
+                                        {(formValues[key] || '').includes('{{') && (() => {
+                                          const resolved = useEnvironmentStore.getState().substituteVariables(formValues[key] || '')
+                                          const hasUnresolved = resolved.includes('{{')
+                                          return (
+                                            <div className={cn(
+                                              'mt-1 px-2 py-1 rounded text-[11px] font-mono truncate border',
+                                              hasUnresolved
+                                                ? 'bg-orange-500/10 border-orange-500/30 text-orange-600 dark:text-orange-400'
+                                                : 'bg-green-500/10 border-green-500/30 text-green-600 dark:text-green-400'
+                                            )}>
+                                              <span className="text-muted-foreground text-[10px] mr-1">→</span>
+                                              {resolved}
+                                              {hasUnresolved && <span className="ml-1 text-[10px]">(unresolved)</span>}
+                                            </div>
+                                          )
+                                        })()}
                                         {activeFieldSuggestion === key && selectedTool && (() => {
-                                          const suggestions = getFieldSuggestions(selectedTool.name, key)
+                                          const fieldSuggestions = getFieldSuggestions(selectedTool.name, key)
                                           const currentVal = (formValues[key] || '').toLowerCase()
-                                          const filtered = suggestions.filter(s =>
+                                          const filtered = fieldSuggestions.filter(s =>
                                             s.toLowerCase().includes(currentVal) && s !== formValues[key]
                                           )
-                                          if (filtered.length === 0) return null
+                                          // Environment variable suggestions when typing {{
+                                          const envVars = useEnvironmentStore.getState().getActiveVariables()
+                                          const envKeys = Object.keys(envVars)
+                                          const showEnvSuggestions = (formValues[key] || '').includes('{{') && envKeys.length > 0
+                                          const lastBrace = (formValues[key] || '').lastIndexOf('{{')
+                                          const partialVar = lastBrace >= 0 ? (formValues[key] || '').slice(lastBrace + 2) : ''
+                                          const filteredEnvVars = envKeys.filter(k =>
+                                            k.toLowerCase().includes(partialVar.toLowerCase()) && !(formValues[key] || '').includes(`{{${k}}}`)
+                                          )
+
+                                          if (filtered.length === 0 && !showEnvSuggestions) return null
                                           return (
-                                            <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-popover border border-border rounded-md shadow-lg max-h-40 overflow-auto">
-                                              {filtered.map((suggestion, i) => (
-                                                <button
-                                                  key={i}
-                                                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted cursor-pointer truncate"
-                                                  onClick={() => {
-                                                    updateFormValue(key, suggestion)
-                                                    setActiveFieldSuggestion(null)
-                                                  }}
-                                                >
-                                                  {suggestion}
-                                                </button>
-                                              ))}
+                                            <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-popover border border-border rounded-md shadow-lg max-h-48 overflow-auto">
+                                              {showEnvSuggestions && filteredEnvVars.length > 0 && (
+                                                <>
+                                                  <div className="px-3 py-1 text-[10px] font-medium text-muted-foreground border-b border-border bg-muted/30">
+                                                    Environment Variables
+                                                  </div>
+                                                  {filteredEnvVars.map((envKey, envIdx) => (
+                                                    <button
+                                                      key={`env-${envKey}`}
+                                                      className={cn(
+                                                        'w-full text-left px-3 py-1.5 text-sm hover:bg-muted cursor-pointer flex items-center justify-between gap-2',
+                                                        suggestionHighlightIndex === envIdx && 'bg-muted'
+                                                      )}
+                                                      onClick={() => {
+                                                        const val = formValues[key] || ''
+                                                        const insertPos = val.lastIndexOf('{{')
+                                                        const newVal = val.slice(0, insertPos) + `{{${envKey}}}`
+                                                        updateFormValue(key, newVal)
+                                                        setActiveFieldSuggestion(null)
+                                                        setSuggestionHighlightIndex(-1)
+                                                      }}
+                                                    >
+                                                      <span className="font-mono text-xs">{`{{${envKey}}}`}</span>
+                                                      <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">
+                                                        {envVars[envKey]}
+                                                      </span>
+                                                    </button>
+                                                  ))}
+                                                </>
+                                              )}
+                                              {filtered.length > 0 && (
+                                                <>
+                                                  {showEnvSuggestions && filteredEnvVars.length > 0 && (
+                                                    <div className="px-3 py-1 text-[10px] font-medium text-muted-foreground border-b border-t border-border bg-muted/30">
+                                                      Recent Values
+                                                    </div>
+                                                  )}
+                                                  {filtered.map((suggestion, i) => (
+                                                    <button
+                                                      key={i}
+                                                      className={cn(
+                                                        'w-full text-left px-3 py-1.5 text-sm hover:bg-muted cursor-pointer truncate',
+                                                        suggestionHighlightIndex === (filteredEnvVars.length + i) && 'bg-muted'
+                                                      )}
+                                                      onClick={() => {
+                                                        updateFormValue(key, suggestion)
+                                                        setActiveFieldSuggestion(null)
+                                                        setSuggestionHighlightIndex(-1)
+                                                      }}
+                                                    >
+                                                      {suggestion}
+                                                    </button>
+                                                  ))}
+                                                </>
+                                              )}
                                             </div>
                                           )
                                         })()}
@@ -1316,10 +1506,10 @@ export function ToolsTab() {
                     <div className="flex items-center justify-between gap-2">
                       <CardTitle className="text-base flex items-center gap-2">
                         Result
-                        {(callToolMutation.isPending || isLoadingAppHtml) && (
+                        {(executingToolName === selectedTool?.name || isLoadingAppHtml) && (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         )}
-                        {latencyMs !== null && !callToolMutation.isPending && (
+                        {latencyMs !== null && executingToolName !== selectedTool?.name && (
                           <span className="text-xs font-normal text-muted-foreground border border-border rounded-md px-2 py-0.5">
                             {latencyMs >= 1000 ? `${(latencyMs / 1000).toFixed(2)}s` : `${latencyMs}ms`}
                           </span>
