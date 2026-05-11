@@ -1,5 +1,6 @@
 import { JsonEditor } from '@/components/JsonEditor'
 import { McpAppViewer } from '@/components/McpAppViewer'
+import { NestedObjectInput } from '@/components/NestedObjectInput'
 import { ToolHistoryPanel } from '@/components/ToolHistoryPanel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -271,6 +272,7 @@ export function ToolsTab() {
   const [toolFilter, setToolFilter] = useState<ToolFilter>('all')
   const [latencyMs, setLatencyMs] = useState<number | null>(null)
   const [executingToolName, setExecutingToolName] = useState<string | null>(null)
+  const [showToolsListJson, setShowToolsListJson] = useState(false)
   const [pinnedTools, setPinnedTools] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem('mcp-pinned-tools')
@@ -500,7 +502,25 @@ export function ToolsTab() {
 
     try {
       const substituteVariables = useEnvironmentStore.getState().substituteVariables
-      const rawArgs = inputMode === 'json' ? JSON.parse(toolArgs) : formValues
+      let rawArgs: Record<string, unknown>
+      if (inputMode === 'json') {
+        rawArgs = JSON.parse(toolArgs)
+      } else {
+        const props = selectedTool.inputSchema.properties || {}
+        rawArgs = {}
+        Object.entries(formValues).forEach(([k, v]) => {
+          const prop = props[k] as { type?: string } | undefined
+          if (prop?.type === 'number' || prop?.type === 'integer') {
+            rawArgs[k] = Number(v) || 0
+          } else if (prop?.type === 'boolean') {
+            rawArgs[k] = v === 'true'
+          } else if (prop?.type === 'object' || prop?.type === 'array') {
+            try { rawArgs[k] = JSON.parse(v) } catch { rawArgs[k] = v }
+          } else {
+            rawArgs[k] = v
+          }
+        })
+      }
       const args = JSON.parse(substituteVariables(JSON.stringify(rawArgs)))
       const persona = activeServer?.activePersona
       const result = await callToolMutation.mutateAsync({
@@ -910,16 +930,27 @@ export function ToolsTab() {
                     </Badge>
                   )}
                 </CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => refetch()}
-                  disabled={isLoading}
-                >
-                  <RefreshCw
-                    className={cn('h-4 w-4', isLoading && 'animate-spin')}
-                  />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowToolsListJson(true)}
+                    disabled={!tools || tools.length === 0}
+                    title="View tools list as JSON"
+                  >
+                    <Code className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => refetch()}
+                    disabled={isLoading}
+                  >
+                    <RefreshCw
+                      className={cn('h-4 w-4', isLoading && 'animate-spin')}
+                    />
+                  </Button>
+                </div>
               </div>
               {/* Search Input */}
               {tools && tools.length > 0 && (
@@ -1137,6 +1168,14 @@ export function ToolsTab() {
                             />
                           </div>
                         )}
+
+                        {/* Last result preview */}
+                        {lastExec && (() => {
+                          const historyEntries = activeServerId ? useHistoryStore.getState().getToolHistory(activeServerId, tool.name) : []
+                          const lastHistory = historyEntries[historyEntries.length - 1]
+                          if (!lastHistory) return null
+                          return <ToolCardResult result={lastHistory.result} durationMs={lastHistory.durationMs} />
+                        })()}
                       </div>
                       )
                     })}
@@ -1315,7 +1354,15 @@ export function ToolsTab() {
                                         {prop.description}
                                       </p>
                                     )}
-                                    {prop.type === 'object' || prop.type === 'array' ? (
+                                    {prop.type === 'object' && (value as any)?.properties ? (
+                                      <div className="rounded-lg border border-border/70 p-3 bg-muted/10">
+                                        <NestedObjectInput
+                                          schema={value as any}
+                                          value={formValues[key] || '{}'}
+                                          onChange={(val) => updateFormValue(key, val)}
+                                        />
+                                      </div>
+                                    ) : prop.type === 'object' || prop.type === 'array' ? (
                                       <div className="relative">
                                         <div className="h-36">
                                           <JsonEditor
@@ -1771,6 +1818,79 @@ export function ToolsTab() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Tools List JSON Dialog */}
+      <Dialog open={showToolsListJson} onOpenChange={setShowToolsListJson}>
+        <DialogContent className="max-w-4xl w-[90vw] h-[85vh] flex flex-col p-0">
+          <DialogHeader className="p-4 pb-2 flex-shrink-0 border-b border-border">
+            <div className="flex items-center justify-between pr-8">
+              <DialogTitle className="flex items-center gap-2">
+                <Code className="h-4 w-4" />
+                Tools List
+                {tools && <Badge variant="secondary">{tools.length} tools</Badge>}
+              </DialogTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  const json = JSON.stringify({ tools }, null, 2)
+                  navigator.clipboard.writeText(json)
+                  toast('Copied tools JSON to clipboard')
+                }}
+              >
+                <Copy className="h-4 w-4 mr-1" />
+                Copy JSON
+              </Button>
+            </div>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden p-4 pt-2">
+            <JsonEditor
+              value={JSON.stringify({ tools: tools || [] }, null, 2)}
+              readOnly
+              height="100%"
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function ToolCardResult({ result, durationMs }: { result: ParsedMcpResult; durationMs?: number }) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div className="mt-2">
+      <button
+        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        onClick={(e) => { e.stopPropagation(); setExpanded(!expanded) }}
+      >
+        {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        <span>Last Result</span>
+        {result.isError && <AlertCircle className="h-3 w-3 text-destructive" />}
+        {durationMs && (
+          <span className="text-[10px] text-muted-foreground/70">
+            ({durationMs >= 1000 ? `${(durationMs / 1000).toFixed(1)}s` : `${durationMs}ms`})
+          </span>
+        )}
+      </button>
+      {expanded && (
+        <div
+          className={cn(
+            'mt-1.5 rounded-md border overflow-hidden',
+            result.isError ? 'border-destructive/30' : 'border-border'
+          )}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="h-52">
+            <JsonEditor
+              value={result.rawText}
+              readOnly
+              height="100%"
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

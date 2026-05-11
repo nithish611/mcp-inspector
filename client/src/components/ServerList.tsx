@@ -3,6 +3,8 @@ import { ServerConfigModal } from '@/components/ServerConfigModal'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { useOAuthRefresh, useOAuthRevoke } from '@/hooks/useApi'
+import { toast } from '@/lib/toast'
 import type { Server, ServerConfig } from '@/stores/serversStore'
 import { useServersStore } from '@/stores/serversStore'
 import { ChevronLeft, Plus, Search, Server as ServerIcon, X } from 'lucide-react'
@@ -71,6 +73,39 @@ export function ServerList({
   const handleDeleteServer = (serverId: string) => {
     if (confirm('Are you sure you want to delete this server?')) {
       removeServer(serverId)
+    }
+  }
+
+  const oauthRefreshMutation = useOAuthRefresh()
+  const oauthRevokeMutation = useOAuthRevoke()
+
+  const handleRefreshToken = async (server: Server) => {
+    if (!server.config.url) return
+    try {
+      const result = await oauthRefreshMutation.mutateAsync({
+        serverUrl: server.config.url,
+        serverId: server.id,
+      })
+      if (result.success) {
+        toast('Token refreshed successfully')
+      } else {
+        toast(result.error || 'Token refresh failed')
+      }
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Token refresh failed')
+    }
+  }
+
+  const handleClearToken = async (server: Server) => {
+    if (!server.config.url) return
+    try {
+      await oauthRevokeMutation.mutateAsync({
+        serverUrl: server.config.url,
+        serverId: server.id,
+      })
+      toast('Token cleared for ' + server.name)
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Failed to clear token')
     }
   }
 
@@ -161,6 +196,8 @@ export function ServerList({
                 onDisconnect={() => onDisconnect(server.id)}
                 onEdit={() => handleEditServer(server)}
                 onDelete={() => handleDeleteServer(server.id)}
+                onRefreshToken={() => handleRefreshToken(server)}
+                onClearToken={() => handleClearToken(server)}
               />
             ))
           )}

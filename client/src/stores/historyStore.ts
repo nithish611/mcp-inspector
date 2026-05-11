@@ -2,8 +2,8 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { generateId, type ParsedMcpResult } from '@/lib/utils'
 
-const MAX_ENTRIES_PER_SERVER = 200
-const MAX_RAW_TEXT_LENGTH = 50000
+const MAX_ENTRIES_PER_SERVER = 50
+const MAX_RAW_TEXT_LENGTH = 5000
 
 export interface HistoryEntry {
   id: string
@@ -70,6 +70,28 @@ export const useHistoryStore = create<HistoryState>()(
         return (get().entries[serverId] || []).filter(e => e.toolName === toolName)
       },
     }),
-    { name: 'mcp-tool-history' }
+    {
+      name: 'mcp-tool-history',
+      storage: {
+        getItem: (name) => {
+          try {
+            const str = localStorage.getItem(name)
+            return str ? JSON.parse(str) : null
+          } catch { return null }
+        },
+        setItem: (name, value) => {
+          try {
+            localStorage.setItem(name, JSON.stringify(value))
+          } catch {
+            // Quota exceeded — clear old data and retry
+            try {
+              localStorage.removeItem(name)
+              localStorage.setItem(name, JSON.stringify(value))
+            } catch { /* give up silently */ }
+          }
+        },
+        removeItem: (name) => { localStorage.removeItem(name) },
+      },
+    }
   )
 )

@@ -5,12 +5,14 @@ import { cn } from '@/lib/utils'
 import type { Server } from '@/stores/serversStore'
 import {
     Copy,
+    Eraser,
     Globe,
     Loader2,
     MoreVertical,
     Pencil,
     Plug,
     Radio,
+    RefreshCw,
     Terminal,
     Trash2,
     Unplug,
@@ -25,6 +27,8 @@ interface ServerCardProps {
   onDisconnect: () => void
   onEdit: () => void
   onDelete: () => void
+  onRefreshToken?: () => void
+  onClearToken?: () => void
 }
 
 export function ServerCard({
@@ -35,6 +39,8 @@ export function ServerCard({
   onDisconnect,
   onEdit,
   onDelete,
+  onRefreshToken,
+  onClearToken,
 }: ServerCardProps) {
   const [showMenu, setShowMenu] = useState(false)
 
@@ -220,7 +226,7 @@ export function ServerCard({
                     setShowMenu(false)
                   }}
                 />
-                <div className="absolute right-0 top-full mt-1 z-20 bg-popover border border-border rounded-md shadow-lg py-1 min-w-[120px]">
+                <div className="absolute right-0 top-full mt-1 z-20 bg-popover border border-border rounded-md shadow-lg py-1 min-w-[150px]">
                   <button
                     className="w-full px-3 py-1.5 text-sm text-left hover:bg-muted flex items-center gap-2"
                     onClick={(e) => {
@@ -232,6 +238,33 @@ export function ServerCard({
                     <Pencil className="h-3.5 w-3.5" />
                     Edit
                   </button>
+                  {onRefreshToken && server.config.oauth?.enabled && (
+                    <button
+                      className="w-full px-3 py-1.5 text-sm text-left hover:bg-muted flex items-center gap-2"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setShowMenu(false)
+                        onRefreshToken()
+                      }}
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      Refresh Token
+                    </button>
+                  )}
+                  {onClearToken && server.config.oauth?.enabled && (
+                    <button
+                      className="w-full px-3 py-1.5 text-sm text-left hover:bg-muted flex items-center gap-2 text-orange-500"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setShowMenu(false)
+                        onClearToken()
+                      }}
+                    >
+                      <Eraser className="h-3.5 w-3.5" />
+                      Clear Token
+                    </button>
+                  )}
+                  <div className="border-t border-border my-1" />
                   <button
                     className="w-full px-3 py-1.5 text-sm text-left hover:bg-muted flex items-center gap-2 text-destructive"
                     onClick={(e) => {
