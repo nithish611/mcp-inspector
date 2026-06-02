@@ -1,7 +1,7 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 
-const DEFAULT_MODEL_ID = 'anthropic.claude-3-haiku-20240307-v1:0';
-const DEFAULT_REGION = 'us-east-1';
+const DEFAULT_MODEL_ID = 'us.anthropic.claude-opus-4-6-v1';
+const DEFAULT_REGION = 'us-west-2';
 
 let client: BedrockRuntimeClient | null = null;
 
