@@ -1,6 +1,6 @@
 import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { createServer } from 'http';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -39,6 +39,18 @@ import wsManager from './websocket.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// Resolves to the root package.json from both dist/server (built) and server/src (dev)
+function getPackageVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(join(__dirname, '..', '..', 'package.json'), 'utf-8'));
+    return pkg.version || 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+const PACKAGE_VERSION = getPackageVersion();
 
 // Initialize OAuth module with encryption key from environment
 const OAUTH_ENCRYPTION_KEY = process.env.AUTH_ENCRYPTION_SECRET || process.env.OAUTH_ENCRYPTION_KEY;
@@ -727,6 +739,7 @@ wsManager.initialize(server);
 
 // Start server
 server.listen(PORT, () => {
+  console.log(`📦 @nithish611/mcp-inspector v${PACKAGE_VERSION}`);
   console.log(`🚀 MCP Client Server running on http://localhost:${PORT}`);
   console.log(`📡 WebSocket server available at ws://localhost:${PORT}/ws`);
   if (isProduction || existsSync(join(clientDistPath, 'index.html'))) {

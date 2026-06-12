@@ -73,18 +73,22 @@ After starting, open your browser to http://localhost:<port> to use the client.
 `);
 }
 
-async function showVersion() {
+async function getVersion() {
   try {
     const packagePath = join(__dirname, '..', 'package.json');
     const { default: pkg } = await import(packagePath, { assert: { type: 'json' } });
-    console.log(`mcp-client v${pkg.version}`);
+    return pkg.version;
   } catch {
     // Fallback for Node versions that don't support import assertions
     const { readFileSync } = await import('fs');
     const packagePath = join(__dirname, '..', 'package.json');
     const pkg = JSON.parse(readFileSync(packagePath, 'utf-8'));
-    console.log(`mcp-client v${pkg.version}`);
+    return pkg.version;
   }
+}
+
+async function showVersion() {
+  console.log(`mcp-client v${await getVersion()}`);
 }
 
 async function checkPortAvailable(port) {
@@ -139,6 +143,7 @@ async function main() {
 ╚══════════════════════════════════════════════════════════════╝
 `);
 
+  console.log(`📦 @nithish611/mcp-inspector v${await getVersion()}`);
   console.log(`Starting server on http://localhost:${port}...`);
 
   // Start the server
