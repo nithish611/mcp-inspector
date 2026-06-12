@@ -23,6 +23,8 @@ import { useHistoryStore } from '@/stores/historyStore'
 import { useServersStore } from '@/stores/serversStore'
 import {
   AlertCircle,
+  Braces,
+  CaseSensitive,
   ChevronDown,
   ChevronRight,
   Clock,
@@ -74,50 +76,17 @@ function getToolIntent(tool: Tool): ToolIntent {
 }
 
 function getToolTitle(tool: Tool): string {
-  const title = tool.annotations?.title
+  const title = tool.title ?? tool.annotations?.title
   if (typeof title === 'string' && title.trim().length > 0) {
     return title
   }
   return tool.name
 }
 
-type SchemaNode = {
-  type?: string
-  properties?: Record<string, SchemaNode>
-  items?: SchemaNode
-  default?: unknown
-  enum?: unknown[]
-  additionalProperties?: boolean | SchemaNode
-}
+type ToolDisplayMode = 'title' | 'name'
 
-function buildSkeleton(schema: SchemaNode, depth = 0): unknown {
-  if (depth > 6) return undefined
-  if (schema.default !== undefined) return schema.default
-  if (schema.enum && schema.enum.length > 0) return schema.enum[0]
-
-  switch (schema.type) {
-    case 'string':
-      return ''
-    case 'number':
-    case 'integer':
-      return 0
-    case 'boolean':
-      return false
-    case 'array': {
-      return []
-    }
-    case 'object': {
-      if (!schema.properties) return {}
-      const obj: Record<string, unknown> = {}
-      for (const [key, propSchema] of Object.entries(schema.properties)) {
-        const val = buildSkeleton(propSchema, depth + 1)
-        if (val !== undefined) obj[key] = val
-      }
-      return obj
-    }
-    default:
-      return undefined
-  }
+function getToolDisplayName(tool: Tool, mode: ToolDisplayMode): string {
+  return mode === 'name' ? tool.name : getToolTitle(tool)
 }
 
 function argsToFormValues(args: Record<string, unknown>): Record<string, string> {
@@ -129,6 +98,7 @@ function argsToFormValues(args: Record<string, unknown>): Record<string, string>
   )
 }
 
+const TOOL_DISPLAY_MODE_KEY = 'mcp-tool-display-mode'
 const TOOL_ARGS_STORAGE_KEY = 'mcp-tool-args'
 
 // Get stored tool arguments
@@ -273,6 +243,25 @@ export function ToolsTab() {
   const [latencyMs, setLatencyMs] = useState<number | null>(null)
   const [executingToolName, setExecutingToolName] = useState<string | null>(null)
   const [showToolsListJson, setShowToolsListJson] = useState(false)
+  const [toolDisplayMode, setToolDisplayMode] = useState<ToolDisplayMode>(() => {
+    try {
+      return localStorage.getItem(TOOL_DISPLAY_MODE_KEY) === 'title' ? 'title' : 'name'
+    } catch {
+      return 'name'
+    }
+  })
+
+  const toggleToolDisplayMode = useCallback(() => {
+    setToolDisplayMode((prev) => {
+      const next = prev === 'title' ? 'name' : 'title'
+      try {
+        localStorage.setItem(TOOL_DISPLAY_MODE_KEY, next)
+      } catch {
+        // Ignore localStorage errors
+      }
+      return next
+    })
+  }, [])
   const [pinnedTools, setPinnedTools] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem('mcp-pinned-tools')
@@ -292,6 +281,12 @@ export function ToolsTab() {
   const selectedToolResourceUri = selectedTool ? getToolUiResourceUri(selectedTool) : undefined
   const isAppTool = !!selectedToolResourceUri
 
+  // Whether any tool has a title distinct from its name — if not, the display toggle is pointless
+  const anyToolHasTitle = useMemo(
+    () => (tools ?? []).some((tool) => getToolTitle(tool) !== tool.name),
+    [tools]
+  )
+
   // Filter tools based on search query
   const filteredTools = useMemo(() => {
     if (!tools) return tools
@@ -301,6 +296,7 @@ export function ToolsTab() {
       const matchesSearch =
         !query ||
         tool.name.toLowerCase().includes(query) ||
+        getToolTitle(tool).toLowerCase().includes(query) ||
         tool.description?.toLowerCase().includes(query)
 
       const isUiTool = !!getToolUiResourceUri(tool)
@@ -364,24 +360,9 @@ export function ToolsTab() {
           setFormValues({})
         }
       } else {
-        const defaultArgs: Record<string, unknown> = {}
-        const props = selectedTool.inputSchema.properties || {}
-        
-        Object.entries(props).forEach(([key, value]) => {
-          const val = buildSkeleton(value as SchemaNode)
-          if (val !== undefined) defaultArgs[key] = val
-        })
-
-        const argsStr = JSON.stringify(defaultArgs, null, 2)
-        setToolArgs(argsStr)
-        setFormValues(
-          Object.fromEntries(
-            Object.entries(defaultArgs).map(([k, v]) => [
-              k,
-              typeof v === 'object' && v !== null ? JSON.stringify(v, null, 2) : String(v),
-            ])
-          )
-        )
+        // Start empty — only parameters the user actually fills in are sent
+        setToolArgs('{}')
+        setFormValues({})
       }
 
       // Try to get cached result
@@ -479,6 +460,14 @@ export function ToolsTab() {
     return cachedEmails.filter(e => e.email.toLowerCase().includes(q))
   }, [cachedEmails, personaEmail])
 
+  const handleBeautifyArgs = useCallback(() => {
+    try {
+      setToolArgs(JSON.stringify(JSON.parse(toolArgs), null, 2))
+    } catch {
+      toast('Invalid JSON — fix syntax errors before beautifying')
+    }
+  }, [toolArgs])
+
   const handleExecuteTool = useCallback(async () => {
     if (!selectedTool || !activeServerId) return
     const toolIntent = getToolIntent(selectedTool)
@@ -509,6 +498,8 @@ export function ToolsTab() {
         const props = selectedTool.inputSchema.properties || {}
         rawArgs = {}
         Object.entries(formValues).forEach(([k, v]) => {
+          // Skip parameters the user left empty — don't send defaults
+          if (typeof v !== 'string' || v.trim() === '') return
           const prop = props[k] as { type?: string } | undefined
           if (prop?.type === 'number' || prop?.type === 'integer') {
             rawArgs[k] = Number(v) || 0
@@ -934,6 +925,22 @@ export function ToolsTab() {
                   <Button
                     variant="ghost"
                     size="sm"
+                    onClick={toggleToolDisplayMode}
+                    disabled={!tools || tools.length === 0 || !anyToolHasTitle}
+                    title={
+                      !anyToolHasTitle
+                        ? 'Tools on this server have no titles'
+                        : toolDisplayMode === 'title'
+                          ? 'Showing titles — click to show raw tool names'
+                          : 'Showing raw tool names — click to show titles'
+                    }
+                    className={cn(toolDisplayMode === 'title' && anyToolHasTitle && 'text-primary bg-primary/15')}
+                  >
+                    <CaseSensitive className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => setShowToolsListJson(true)}
                     disabled={!tools || tools.length === 0}
                     title="View tools list as JSON"
@@ -1076,8 +1083,11 @@ export function ToolsTab() {
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <p className="font-medium font-mono text-sm truncate">
-                                {getToolTitle(tool)}
+                              <p
+                                className="font-medium font-mono text-sm truncate"
+                                title={toolDisplayMode === 'title' ? tool.name : getToolTitle(tool)}
+                              >
+                                {getToolDisplayName(tool, toolDisplayMode)}
                               </p>
                               {(() => {
                                 const intent = getToolIntent(tool)
@@ -1203,7 +1213,12 @@ export function ToolsTab() {
                       <CardTitle className="text-base">
                         {selectedTool ? (
                           <span className="flex items-center gap-2">
-                            <span className="font-mono">{selectedTool.name}</span>
+                            <span
+                              className="font-mono"
+                              title={toolDisplayMode === 'title' ? selectedTool.name : getToolTitle(selectedTool)}
+                            >
+                              {getToolDisplayName(selectedTool, toolDisplayMode)}
+                            </span>
                             <Badge variant="outline">Arguments</Badge>
                           </span>
                         ) : (
@@ -1238,6 +1253,16 @@ export function ToolsTab() {
                               Form
                             </button>
                           </div>
+                        )}
+                        {selectedTool && inputMode === 'json' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleBeautifyArgs}
+                            title="Beautify JSON (format & indent)"
+                          >
+                            <Braces className="h-4 w-4" />
+                          </Button>
                         )}
                         {selectedTool && (
                           <Button
@@ -1324,6 +1349,11 @@ export function ToolsTab() {
                             onChange={setToolArgs}
                             height="100%"
                             schema={selectedTool.inputSchema}
+                            onSubmit={() => {
+                              if (selectedTool && executingToolName !== selectedTool.name) {
+                                handleExecuteTool()
+                              }
+                            }}
                           />
                         </div>
                       ) : (
@@ -1684,7 +1714,7 @@ export function ToolsTab() {
           <DialogHeader className="px-6 pt-6 pb-3 flex-shrink-0">
             <DialogTitle className="flex items-center gap-2 font-mono text-base">
               <Code className="h-4 w-4" />
-              {schemaDialogTool?.name}
+              {schemaDialogTool ? getToolDisplayName(schemaDialogTool, toolDisplayMode) : null}
               <Badge variant="outline" className="text-xs font-sans">Input Schema</Badge>
             </DialogTitle>
             {schemaDialogTool?.description && (

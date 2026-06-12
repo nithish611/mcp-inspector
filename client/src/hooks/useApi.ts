@@ -103,6 +103,7 @@ export function useConnectedServers() {
 // Tools hooks
 export interface Tool {
   name: string
+  title?: string
   description?: string
   annotations?: {
     title?: string

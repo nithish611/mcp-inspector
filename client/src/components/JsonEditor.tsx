@@ -15,6 +15,8 @@ interface JsonEditorProps {
   height?: string | number
   schema?: object
   completionItems?: CompletionItem[]
+  /** Called on Shift+Enter or Cmd/Ctrl+Enter inside the editor */
+  onSubmit?: () => void
 }
 
 export function JsonEditor({
@@ -24,13 +26,38 @@ export function JsonEditor({
   height = '200px',
   schema,
   completionItems,
+  onSubmit,
 }: JsonEditorProps) {
   const { theme } = useThemeStore()
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null)
   const completionDisposableRef = useRef<{ dispose: () => void } | null>(null)
+  // Keep the latest callback — Monaco keybindings are registered once on mount
+  const onSubmitRef = useRef(onSubmit)
+  onSubmitRef.current = onSubmit
 
   const handleEditorDidMount: OnMount = (editor, monaco) => {
     editorRef.current = editor
+
+    // Submit shortcuts: Shift+Enter and Cmd/Ctrl+Enter trigger onSubmit
+    // (Monaco captures these keys, so a window-level listener never sees them).
+    // Only registered when a handler is provided so Shift+Enter still inserts
+    // a newline in editors without one.
+    if (onSubmit) {
+      editor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.Enter, () => {
+        onSubmitRef.current?.()
+      })
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+        onSubmitRef.current?.()
+      })
+    }
+
+    // Cmd/Ctrl+S inside the editor formats (beautifies) the JSON instead of
+    // triggering the browser's save dialog
+    if (!readOnly) {
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+        editor.getAction('editor.action.formatDocument')?.run()
+      })
+    }
 
     // Configure JSON schema validation if provided
     if (schema) {

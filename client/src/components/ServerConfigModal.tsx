@@ -152,8 +152,12 @@ export function ServerConfigModal({
         <div className="space-y-4 py-4">
           {/* Server Name */}
           <div className="space-y-2 rounded-lg border border-border/70 bg-muted/20 p-3">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Step 1</Label>
-            <Label htmlFor="name">Server Name</Label>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground border border-border/60 bg-muted/40 rounded-full px-2 py-0.5">
+                Step 1
+              </span>
+              <Label htmlFor="name">Server Name</Label>
+            </div>
             <Input
               id="name"
               placeholder="My MCP Server"
@@ -165,8 +169,12 @@ export function ServerConfigModal({
 
           {/* Transport Type */}
           <div className="space-y-2 rounded-lg border border-border/70 bg-muted/20 p-3">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Step 2</Label>
-            <Label>Transport Type</Label>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground border border-border/60 bg-muted/40 rounded-full px-2 py-0.5">
+                Step 2
+              </span>
+              <Label>Transport Type</Label>
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <Button
                 type="button"
@@ -192,7 +200,11 @@ export function ServerConfigModal({
           {/* STDIO Configuration */}
           {transportType === 'stdio' && (
             <div className="space-y-3 rounded-lg border border-border/70 bg-muted/20 p-3">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground">Step 3</Label>
+              <div>
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground border border-border/60 bg-muted/40 rounded-full px-2 py-0.5">
+                  Step 3
+                </span>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="command">Command</Label>
                 <Input
@@ -232,7 +244,11 @@ export function ServerConfigModal({
           {/* HTTP Configuration */}
           {transportType !== 'stdio' && (
             <div className="space-y-3 rounded-lg border border-border/70 bg-muted/20 p-3">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground">Step 3</Label>
+              <div>
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground border border-border/60 bg-muted/40 rounded-full px-2 py-0.5">
+                  Step 3
+                </span>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="url">Server URL</Label>
                 <Input

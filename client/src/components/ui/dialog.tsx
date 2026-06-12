@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils'
 import { X } from 'lucide-react'
 import * as React from 'react'
+import { createPortal } from 'react-dom'
 
 interface DialogProps {
   open: boolean
@@ -58,7 +59,10 @@ function DialogContent({ className, children, ...props }: DialogContentProps) {
   
   if (!context?.open) return null
 
-  return (
+  // Portal to <body> so the dialog centers on the viewport even when a
+  // transformed/filtered ancestor (e.g. the sidebar panel) would trap
+  // position:fixed inside it.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
       <div
@@ -84,7 +88,8 @@ function DialogContent({ className, children, ...props }: DialogContentProps) {
         </button>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
