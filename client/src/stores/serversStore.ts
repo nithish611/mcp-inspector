@@ -18,6 +18,7 @@ export interface OAuthStatus {
   authorizationUrl?: string
   scopes?: string[]
   expiresAt?: number
+  userEmail?: string
   error?: string
 }
 

@@ -324,6 +324,22 @@ export function clearMetadataCache(): void {
 }
 
 /**
+ * Get the token-sharing key for an MCP server.
+ * Tokens and registered clients are scoped to the auth server (host + tenant,
+ * i.e. the first path segment), so all connectors under the same tenant share
+ * one login instead of requiring a separate OAuth flow each.
+ */
+export function getTokenSharingKey(serverUrl: string): string {
+  try {
+    const url = new URL(serverUrl);
+    const firstSegment = url.pathname.split('/').filter(Boolean)[0];
+    return firstSegment ? `${url.origin}/${firstSegment}` : url.origin;
+  } catch {
+    return serverUrl;
+  }
+}
+
+/**
  * Get the canonical URI for an MCP server (for RFC 8707 resource parameter)
  */
 export function getCanonicalResourceUri(serverUrl: string): string {

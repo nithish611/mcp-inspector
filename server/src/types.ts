@@ -198,6 +198,8 @@ export interface AuthServerMetadata {
   jwks_uri?: string;
   /** URL of the dynamic client registration endpoint (RFC 7591) */
   registration_endpoint?: string;
+  /** URL of the OIDC userinfo endpoint */
+  userinfo_endpoint?: string;
   /** Scopes supported by this authorization server */
   scopes_supported?: string[];
   /** Response types supported */
@@ -315,6 +317,8 @@ export interface OAuthTokens {
   expiresAt: number;
   /** Granted scopes (space-separated) */
   scope?: string;
+  /** Email of the logged-in user (from id_token or userinfo endpoint) */
+  userEmail?: string;
 }
 
 /**
@@ -369,6 +373,8 @@ export interface OAuthStatus {
   scopes?: string[];
   /** Token expiration time */
   expiresAt?: number;
+  /** Email of the logged-in user (decoded from the access token) */
+  userEmail?: string;
   /** Error message if any */
   error?: string;
 }

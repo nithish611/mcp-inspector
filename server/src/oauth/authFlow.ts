@@ -26,6 +26,7 @@ import { generatePkcePair, generateState, selectPkceMethod } from './pkce.js';
 import {
     exchangeCodeForTokens,
     getTokens,
+    getUserEmail,
     getValidAccessToken,
     hasValidTokens,
     removeTokens,
@@ -392,6 +393,24 @@ export async function getAccessToken(
 /**
  * Get the OAuth status for a resource
  */
+/**
+ * Resolve the logged-in user's email, using the auth server's userinfo
+ * endpoint as a fallback when the tokens don't carry an email claim.
+ */
+async function resolveUserEmail(
+  serverUrl: string,
+  resourceUri: string
+): Promise<string | undefined> {
+  let userinfoEndpoint: string | undefined;
+  try {
+    const { authServer } = await getMetadata(serverUrl);
+    userinfoEndpoint = authServer.userinfo_endpoint;
+  } catch {
+    // Metadata discovery failed; fall back to token claims only
+  }
+  return getUserEmail(resourceUri, userinfoEndpoint);
+}
+
 export async function getOAuthStatus(
   serverUrl: string,
   config: OAuthConfig
@@ -405,6 +424,7 @@ export async function getOAuthStatus(
       authenticated: true,
       scopes: tokens?.scope?.split(' '),
       expiresAt: tokens?.expiresAt,
+      userEmail: await resolveUserEmail(serverUrl, resourceUri),
     };
   }
 
@@ -421,6 +441,7 @@ export async function getOAuthStatus(
         authenticated: true,
         scopes: tokens?.scope?.split(' '),
         expiresAt: tokens?.expiresAt,
+        userEmail: await resolveUserEmail(serverUrl, resourceUri),
       };
     }
   } catch (error) {

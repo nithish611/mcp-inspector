@@ -13,6 +13,7 @@ import type {
     DCRResponse,
     RegisteredClient,
 } from '../types.js';
+import { getTokenSharingKey } from './discovery.js';
 
 // In-memory storage for registered clients (keyed by issuer + resourceUri)
 const registeredClients = new Map<string, RegisteredClient>();
@@ -61,10 +62,22 @@ function loadClientsFromFile(): void {
       return;
     }
     let loaded = 0;
+    let migrated = false;
     for (const [key, client] of Object.entries(parsed.clients)) {
       if (!client || typeof client !== 'object') continue;
-      registeredClients.set(key, client);
+      // Migrate legacy keys (full resource URI) to the shared-resource key
+      const parts = key.split('|');
+      const newKey = parts.length >= 2
+        ? getClientCacheKey(parts[0], parts[1], parts[2])
+        : key;
+      if (newKey !== key) migrated = true;
+      if (!registeredClients.has(newKey)) {
+        registeredClients.set(newKey, client);
+      }
       loaded += 1;
+    }
+    if (migrated) {
+      saveClientsToFile();
     }
     if (loaded > 0) {
       console.log(`[DCR] Loaded ${loaded} registered client(s) from ${DCR_CACHE_FILE}`);
@@ -141,10 +154,13 @@ function decrypt(encryptedText: string): string {
  * Includes redirectUri to ensure a new client is registered when the port changes
  */
 function getClientCacheKey(issuer: string, resourceUri: string, redirectUri?: string): string {
+  // Scope clients to the auth server (host + tenant) so all connectors under
+  // the same tenant reuse one registration — required for shared-token refresh
+  const sharedResource = getTokenSharingKey(resourceUri);
   if (redirectUri) {
-    return `${issuer}|${resourceUri}|${redirectUri}`;
+    return `${issuer}|${sharedResource}|${redirectUri}`;
   }
-  return `${issuer}|${resourceUri}`;
+  return `${issuer}|${sharedResource}`;
 }
 
 /**
@@ -171,9 +187,9 @@ export function getRegisteredClient(issuer: string, resourceUri: string, redirec
     }
   }
 
-  // Fallback: search for any client matching issuer and resourceUri (for backward compatibility)
+  // Fallback: search for any client matching issuer and shared resource (for backward compatibility)
   for (const [key, client] of registeredClients.entries()) {
-    if (key.startsWith(`${issuer}|${resourceUri}`)) {
+    if (key.startsWith(`${issuer}|${getTokenSharingKey(resourceUri)}`)) {
       // Check if client secret has expired
       if (client.clientSecretExpiresAt && client.clientSecretExpiresAt < Date.now() / 1000) {
         console.log('[DCR] Registered client secret has expired, removing from cache');

@@ -16,6 +16,7 @@ import {
     Terminal,
     Trash2,
     Unplug,
+    UserRound,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -149,6 +150,19 @@ export function ServerCard({
             <p className="text-xs text-destructive mt-1 truncate">
               {server.status.error}
             </p>
+          )}
+
+          {/* Logged-in user */}
+          {server.status.connected && server.status.oauth?.userEmail && (
+            <div
+              className="flex items-center gap-1.5 mt-1.5 min-w-0"
+              title={`Logged in as ${server.status.oauth.userEmail}`}
+            >
+              <UserRound className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+              <span className="text-xs text-muted-foreground truncate">
+                {server.status.oauth.userEmail}
+              </span>
+            </div>
           )}
 
           {/* Capabilities */}

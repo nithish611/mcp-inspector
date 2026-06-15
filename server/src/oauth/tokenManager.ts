@@ -8,8 +8,10 @@ import fs from 'fs';
 import { homedir } from 'os';
 import path from 'path';
 import type { AuthServerMetadata, OAuthTokens, PersonaToken } from '../types.js';
+import { getTokenSharingKey } from './discovery.js';
 
-// In-memory storage for tokens (keyed by resourceUri)
+// In-memory storage for tokens, keyed by the token-sharing key (host + tenant)
+// so all connectors under the same auth server share one login
 const tokenStore = new Map<string, EncryptedTokens>();
 const TOKEN_CACHE_DIR = path.join(homedir(), '.mcpinspector');
 const TOKEN_CACHE_FILE = path.join(TOKEN_CACHE_DIR, 'oauth-tokens.json');
@@ -25,6 +27,7 @@ interface EncryptedTokens {
   expiresAt: number;
   scope?: string;
   issuer: string;
+  userEmail?: string;
 }
 
 interface TokenResponse {
@@ -34,6 +37,7 @@ interface TokenResponse {
   refresh_token?: string;
   refresh_expires_in?: number;
   scope?: string;
+  id_token?: string;
 }
 
 interface TokenCacheFile {
@@ -76,10 +80,21 @@ function loadTokensFromFile(): void {
     }
 
     let loaded = 0;
+    let migrated = false;
     for (const [resourceUri, token] of Object.entries(parsed.tokens)) {
       if (!token || typeof token !== 'object') continue;
-      tokenStore.set(resourceUri, token);
+      // Migrate legacy full-resource-URI keys to the shared key; on collision
+      // keep the entry with the latest expiration
+      const key = getTokenSharingKey(resourceUri);
+      if (key !== resourceUri) migrated = true;
+      const existing = tokenStore.get(key);
+      if (!existing || (token.expiresAt || 0) > (existing.expiresAt || 0)) {
+        tokenStore.set(key, token);
+      }
       loaded += 1;
+    }
+    if (migrated) {
+      saveTokensToFile();
     }
     if (loaded > 0) {
       console.log(`[TokenManager] Loaded ${loaded} token set(s) from ${TOKEN_CACHE_FILE}`);
@@ -152,6 +167,7 @@ function decrypt(encryptedText: string): string {
  * Store tokens for a resource
  */
 export function storeTokens(resourceUri: string, tokens: OAuthTokens, issuer: string): void {
+  const key = getTokenSharingKey(resourceUri);
   const encrypted: EncryptedTokens = {
     accessToken: encrypt(tokens.accessToken),
     refreshToken: tokens.refreshToken ? encrypt(tokens.refreshToken) : undefined,
@@ -160,18 +176,20 @@ export function storeTokens(resourceUri: string, tokens: OAuthTokens, issuer: st
     expiresAt: tokens.expiresAt,
     scope: tokens.scope,
     issuer,
+    // Preserve a previously resolved email if the new tokens don't carry one
+    userEmail: tokens.userEmail || tokenStore.get(key)?.userEmail,
   };
 
-  tokenStore.set(resourceUri, encrypted);
+  tokenStore.set(key, encrypted);
   saveTokensToFile();
-  console.log(`[TokenManager] Stored tokens for ${resourceUri}`);
+  console.log(`[TokenManager] Stored tokens for ${key}`);
 }
 
 /**
  * Get tokens for a resource
  */
 export function getTokens(resourceUri: string): OAuthTokens | null {
-  const encrypted = tokenStore.get(resourceUri);
+  const encrypted = tokenStore.get(getTokenSharingKey(resourceUri));
   if (!encrypted) {
     return null;
   }
@@ -183,14 +201,78 @@ export function getTokens(resourceUri: string): OAuthTokens | null {
     tokenType: encrypted.tokenType,
     expiresAt: encrypted.expiresAt,
     scope: encrypted.scope,
+    userEmail: encrypted.userEmail,
   };
+}
+
+/**
+ * Decode an email-ish claim from a JWT (best-effort, no verification)
+ */
+function decodeEmailFromJwt(jwt: string): string | undefined {
+  try {
+    const payload = jwt.split('.')[1];
+    const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    return decoded.email || decoded.preferred_username || decoded.upn || undefined;
+  } catch {
+    // Opaque (non-JWT) token or malformed payload
+    return undefined;
+  }
+}
+
+/**
+ * Resolve the logged-in user's email for a resource.
+ * Order: stored email (from id_token) → access token claims → userinfo endpoint.
+ * The userinfo result is cached back into the token store.
+ */
+export async function getUserEmail(
+  resourceUri: string,
+  userinfoEndpoint?: string
+): Promise<string | undefined> {
+  const tokens = getTokens(resourceUri);
+  if (!tokens?.accessToken) {
+    return undefined;
+  }
+
+  if (tokens.userEmail) {
+    return tokens.userEmail;
+  }
+
+  const fromJwt = decodeEmailFromJwt(tokens.accessToken);
+  if (fromJwt) {
+    return fromJwt;
+  }
+
+  if (!userinfoEndpoint) {
+    return undefined;
+  }
+
+  try {
+    const response = await fetch(userinfoEndpoint, {
+      headers: { Authorization: `Bearer ${tokens.accessToken}` },
+    });
+    if (!response.ok) {
+      return undefined;
+    }
+    const info = await response.json() as { email?: string; preferred_username?: string };
+    const email = info.email || info.preferred_username;
+    if (email) {
+      const encrypted = tokenStore.get(getTokenSharingKey(resourceUri));
+      if (encrypted) {
+        encrypted.userEmail = email;
+        saveTokensToFile();
+      }
+    }
+    return email;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
  * Get the issuer for stored tokens
  */
 export function getTokenIssuer(resourceUri: string): string | null {
-  const encrypted = tokenStore.get(resourceUri);
+  const encrypted = tokenStore.get(getTokenSharingKey(resourceUri));
   return encrypted?.issuer || null;
 }
 
@@ -313,6 +395,9 @@ export async function exchangeCodeForTokens(
       ? Date.now() + tokenResponse.refresh_expires_in * 1000
       : undefined,
     scope: tokenResponse.scope,
+    userEmail: tokenResponse.id_token
+      ? decodeEmailFromJwt(tokenResponse.id_token)
+      : undefined,
   };
 
   console.log(`[TokenManager] Received tokens, expires at ${new Date(tokens.expiresAt).toISOString()}`);
@@ -415,6 +500,8 @@ export async function refreshTokens(
       ? Date.now() + tokenResponse.refresh_expires_in * 1000
       : currentTokens.refreshExpiresAt,
     scope: tokenResponse.scope || currentTokens.scope,
+    userEmail: (tokenResponse.id_token && decodeEmailFromJwt(tokenResponse.id_token))
+      || currentTokens.userEmail,
   };
 
   // Store the new tokens
@@ -461,7 +548,7 @@ export async function getValidAccessToken(
  * Remove tokens for a resource
  */
 export function removeTokens(resourceUri: string): boolean {
-  const deleted = tokenStore.delete(resourceUri);
+  const deleted = tokenStore.delete(getTokenSharingKey(resourceUri));
   if (deleted) {
     saveTokensToFile();
     console.log(`[TokenManager] Removed tokens for ${resourceUri}`);

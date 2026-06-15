@@ -792,6 +792,8 @@ export function ToolsTab() {
   const showPersonaBar = activeServer?.config.oauth?.enabled && isConnected &&
     (activeServer.config.type === 'streamable-http' || activeServer.config.type === 'sse')
 
+  const loggedInEmail = activeServer?.status.oauth?.userEmail
+
   return (
     <div className="h-full p-2.5 flex flex-col gap-2">
       {/* Global Persona Bar */}
@@ -803,9 +805,9 @@ export function ToolsTab() {
                 <div className="flex items-center justify-center h-7 w-7 rounded-full bg-primary/10">
                   <UserRound className="h-4 w-4 text-primary" />
                 </div>
-                {activeServer.activePersona.actorEmail && (
+                {(activeServer.activePersona.actorEmail || loggedInEmail) && (
                   <Badge variant="outline" className="text-sm px-3 py-0.5 font-normal bg-white text-black border-white/80">
-                    {activeServer.activePersona.actorEmail}
+                    {activeServer.activePersona.actorEmail || loggedInEmail}
                   </Badge>
                 )}
                 <span className="text-sm text-muted-foreground">impersonating</span>
@@ -828,6 +830,15 @@ export function ToolsTab() {
               <div className="flex items-center justify-center h-7 w-7 rounded-full bg-muted flex-shrink-0">
                 <UserRound className="h-4 w-4 text-muted-foreground" />
               </div>
+              {loggedInEmail && (
+                <>
+                  <span className="text-sm text-muted-foreground flex-shrink-0">Logged in as</span>
+                  <Badge variant="outline" className="text-sm px-3 py-0.5 font-normal bg-white text-black border-white/80">
+                    {loggedInEmail}
+                  </Badge>
+                  <div className="h-4 w-px bg-border flex-shrink-0" />
+                </>
+              )}
               <span className="text-sm text-muted-foreground flex-shrink-0">Impersonate</span>
               <div className="relative w-72 min-w-[12rem] max-w-full shrink-0">
                 <Input
